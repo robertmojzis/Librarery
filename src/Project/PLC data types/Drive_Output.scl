@@ -1,0 +1,11 @@
+﻿TYPE "Drive_Output"
+   STRUCT
+      Ready : Bool;
+      Running : Bool;
+      Fault : Bool;
+      Local : Bool;
+      Speed : Int;
+      Torque : Int;
+   END_STRUCT;
+
+END_TYPE

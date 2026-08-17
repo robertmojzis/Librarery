@@ -1,0 +1,46 @@
+﻿FUNCTION_BLOCK "FB_CoolingTank"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR
+      Temeprature : "AnalogInput";
+      Level : "AnalogInput";
+      ValveD : "Valve2Coil";
+   END_VAR
+
+BEGIN
+// Network 1
+Temeprature(Enable := "U3_Data".Temperature.Control.Enable,
+        SupplyOk := "Data".Status.SupplyOk,
+        Ack := "Data".Control.Ack,
+        HMI := "U3_Data".Temperature.HMI);
+
+// Network 2
+Level(Enable := "U3_Data".Level.Control.Enable,
+        SupplyOk := "Data".Status.SupplyOk,
+        Input := "Level2",
+        Ack := "Data".Control.Ack,
+        HMI := "U3_Data".Level.HMI);
+
+// Network 3
+ValveD(AutoMode := "Data".Status.Auto,
+        ManualMode := "Data".Status.Manual,
+        SupplyOk := "Data".Status.SupplyOk,
+        MediumOk := "Data".Status.MediumOk,
+        EstopOk := "Data".Status.EstopOk,
+        EnableA := TRUE,
+        EnableB := TRUE,
+        CtrlA := "AppData".Control.OpenD,
+        CtrlB := "AppData".Control.CloseD,
+        Ack := "Data".Control.Ack,
+        FeedbackA := "ValveD_Opened",
+        FeedbackB := "ValveD_Closed",
+        LeaveA := T#1s,
+        LeaveB := T#1s,
+        MoveToA := T#1s,
+        MoveToB := T#1s,
+        PulseLenght := T#1s,
+        Auto => "U3_Data".ValveD.Status.Auto,
+        Manual => "U3_Data".ValveD.Status.Manual,
+        CoilA => "ValveD_Open",
+        CoilB => "ValveD_Close",
+        HMI := "U3_Data".ValveD.HMI);
+END_FUNCTION_BLOCK

@@ -1,0 +1,8 @@
+﻿DATA_BLOCK "PasteurizationFSM_DB"
+{ S7_Optimized_Access := 'TRUE' }
+"FB_PasteurizationFSM"
+
+
+BEGIN
+
+END_DATA_BLOCK

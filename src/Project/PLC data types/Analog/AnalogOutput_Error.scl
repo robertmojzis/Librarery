@@ -1,0 +1,8 @@
+﻿TYPE "AnalogOutput_Error"
+   STRUCT
+      HighLimitOverFlow : Bool;
+      LowLimitOverFlow : Bool;
+      OutOfRange : Bool;
+   END_STRUCT;
+
+END_TYPE

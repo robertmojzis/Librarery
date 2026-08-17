@@ -1,0 +1,8 @@
+﻿DATA_BLOCK "Process_DB"
+{ S7_Optimized_Access := 'TRUE' }
+"Process"
+
+
+BEGIN
+
+END_DATA_BLOCK

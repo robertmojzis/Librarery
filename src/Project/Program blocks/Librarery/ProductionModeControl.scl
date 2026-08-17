@@ -1,0 +1,341 @@
+﻿FUNCTION_BLOCK "ProductionModeControl"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 2.0
+   VAR_INPUT
+      PowerOk : Bool;  // Power supply ok
+      EstopOk : Bool;  // E-stop ok
+      NoFault : Bool;  // No faults present Mode enables
+      EnableAuto : Bool;  // Enable automatic mode
+      EnableManual : Bool;  // Enable manual mode
+      EnableMaintenance : Bool;  // Enable maintenance mode Mode control source
+      HmiControl : Bool;  // Enable control of the production mode from HMI Physical mode selection inputs
+      AutoSelected : Bool;  // Automatic mode is selected
+      AutoStart : Bool;  // Automatic start
+      ManualStart : Bool;  // Manual start
+      MaintenanceStart : Bool;  // Maintenance start
+      Stop : Bool;  // Stop selected mode Configuration
+      Config : Byte;  // Production mode configuration word Process state feedback (from FB_PasteurizationFSM or AppData_DB)
+      ProcessStateWord : Int;  // Current process state (0-10, 99)
+      ProcessRunning : Bool;  // Process sequence is active
+      ProcessFaultActive : Bool;  // Process fault is active
+      CipActive : Bool;  // CIP sequence is active (states 8-10) â”€â”€ Outputs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Mode outputs
+   END_VAR
+
+   VAR_OUTPUT
+      Auto : Bool;  // Automatic mode active
+      Manual : Bool;  // Manual mode active
+      Maintenance : Bool;  // Maintenance mode active
+      Error : Bool;  // External error active Process state outputs (decoded for PLC logic convenience)
+      ProcIdle : Bool;  // Process state = Idle (0)
+      ProcFillingBalance : Bool;  // Process state = Filling Balance (1)
+      ProcFillingHeat : Bool;  // Process state = Filling Heat (2)
+      ProcHeating : Bool;  // Process state = Heating (3)
+      ProcPasteurising : Bool;  // Process state = Pasteurising (4)
+      ProcTransferring : Bool;  // Process state = Transferring (5)
+      ProcCooling : Bool;  // Process state = Cooling (6)
+      ProcDraining : Bool;  // Process state = Draining (7)
+      ProcCipRinse : Bool;  // Process state = CIP Rinse (8)
+      ProcCipWash : Bool;  // Process state = CIP Wash (9)
+      ProcCipFinalRinse : Bool;  // Process state = CIP Final Rinse (10)
+      ProcFault : Bool;  // Process state = Fault (99) Process command outputs (to FB_PasteurizationFSM)
+      CmdAutoMode : Bool;  // Command: set Auto mode in AppData_DB.Ctrl.AutoMode
+      CmdProcessStart : Bool;  // Command: pulse AppData_DB.Ctrl.StartCmd
+      CmdProcessStop : Bool;  // Command: pulse AppData_DB.Ctrl.StopCmd
+      CmdCipStart : Bool;  // Command: pulse AppData_DB.Ctrl.CipCmd â”€â”€ In/Out â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+   END_VAR
+
+   VAR_IN_OUT
+      Status : Word;  // HMI status word
+      Control : Word;  // HMI control word 
+   END_VAR
+
+   VAR
+      statExternalFault : Bool;  // Mode state latches physical inputs
+      statAutomatic : Bool;  // Automatic mode active
+      statManual : Bool;  // Manual mode active
+      statMaintenance : Bool;  // Maintenance mode active
+      statAutoSelected : Bool;  // Automatic mode selected Mode state latches â€” HMI inputs
+      statAutomaticHMI : Bool;  // Automatic mode active from HMI
+      statManualHMI : Bool;  // Manual mode active from HMI
+      statMaintenanceHMI : Bool;  // Maintenance mode active from HMI Process command pulse latches
+      statProcessStartHMI_Old : Bool;
+      statProcessStopHMI_Old : Bool;
+      statCipStartHMI_Old : Bool;  // Rising edge detectors
+      AutoMode : R_TRIG;
+      ManualMode : R_TRIG;
+      MaintenanceMode : R_TRIG;
+      StopMode : R_TRIG;
+      AutoModeSelect : R_TRIG;
+      ProcessStartEdge : R_TRIG;
+      ProcessStopEdge : R_TRIG;
+      CipStartEdge : R_TRIG;
+   END_VAR
+
+   VAR_TEMP
+      tmpAutoActive : Bool;
+      tmpManualActive : Bool;
+      tmpProcessStartCmd : Bool;
+      tmpProcessStopCmd : Bool;
+      tmpCipCmd : Bool;
+   END_VAR
+
+BEGIN
+
+
+// =============================================================================
+// REGION: Edge signals
+// =============================================================================
+REGION 
+    
+    AutoMode(CLK  := AutoStart);
+    ManualMode(CLK  := ManualStart);
+    MaintenanceMode(CLK  := MaintenanceStart);
+    StopMode(CLK  := Stop);
+    AutoModeSelect(CLK  := AutoSelected);
+    
+    // Process command edges â€” physical inputs map to HMI control bits when not HmiControl
+    ProcessStartEdge(CLK  := Control.%X5);
+    ProcessStopEdge(CLK  := Control.%X6);
+    CipStartEdge(CLK  := Control.%X7);
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: External fault
+// =============================================================================
+REGION 
+    
+    IF PowerOk AND EstopOk AND NoFault THEN
+        statExternalFault := FALSE;
+    ELSE
+        statExternalFault := TRUE;
+    END_IF;
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: Automatic mode
+// =============================================================================
+REGION 
+    
+    IF NOT HmiControl THEN
+        // Reset HMI control bits for this mode
+        Control.%X0 := FALSE;
+        Control.%X1 := FALSE;
+        
+        // Auto selected latch
+        IF AutoModeSelect.Q AND NOT statExternalFault AND EnableAuto THEN
+            statAutoSelected := TRUE;
+        END_IF;
+        IF (Config.%X3 AND statExternalFault)
+            OR (ManualMode.Q AND EnableManual)
+            OR (MaintenanceMode.Q AND EnableMaintenance)
+            OR NOT EnableAuto THEN
+            statAutoSelected := FALSE;
+        END_IF;
+        
+        // Auto active latch
+        IF NOT statExternalFault AND EnableAuto AND AutoMode.Q AND NOT statAutomatic THEN
+            statAutomatic := TRUE;
+        END_IF;
+        IF statAutomatic AND (
+            NOT EnableAuto
+            OR (Config.%X0 AND StopMode.Q)
+            OR (Config.%X3 AND statExternalFault)
+            OR (ManualMode.Q AND EnableManual)
+            OR (MaintenanceMode.Q AND EnableMaintenance)
+            OR (ProcessFaultActive AND Config.%X3)) THEN
+            statAutomatic := FALSE;
+        END_IF;
+        
+    ELSE
+        // HMI control
+        IF EnableAuto THEN
+            IF Control.%X0 AND NOT statExternalFault AND Control.%X1 THEN
+                statAutomaticHMI := TRUE;
+            END_IF;
+            IF statExternalFault
+                OR Control.%X4
+                OR Control.%X2
+                OR Control.%X3
+                OR (ProcessFaultActive AND Config.%X3) THEN
+                statAutomaticHMI := FALSE;
+            END_IF;
+        ELSE
+            Control.%X0 := FALSE;
+            Control.%X1 := FALSE;
+        END_IF;
+    END_IF;
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: Manual mode
+// =============================================================================
+REGION 
+    
+    IF NOT HmiControl THEN
+        IF NOT statExternalFault AND EnableManual AND ManualMode.Q AND NOT statManual THEN
+            statManual := TRUE;
+        END_IF;
+        IF statManual AND (
+            NOT EnableManual
+            OR (Config.%X1 AND StopMode.Q)
+            OR (Config.%X4 AND statExternalFault)
+            OR (AutoMode.Q AND EnableAuto)
+            OR (MaintenanceMode.Q AND EnableMaintenance)) THEN
+            statManual := FALSE;
+        END_IF;
+    ELSE
+        IF EnableManual THEN
+            IF NOT statExternalFault AND Control.%X2 THEN
+                statManualHMI := TRUE;
+            END_IF;
+            IF statExternalFault
+                OR Control.%X1
+                OR Control.%X3 THEN
+                statManualHMI := FALSE;
+            END_IF;
+        END_IF;
+    END_IF;
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: Maintenance mode
+// =============================================================================
+REGION 
+    
+    IF NOT HmiControl THEN
+        IF NOT statExternalFault AND EnableMaintenance AND MaintenanceMode.Q AND NOT statMaintenance THEN
+            statMaintenance := TRUE;
+        END_IF;
+        IF statMaintenance AND (
+            NOT EnableMaintenance
+            OR (Config.%X2 AND StopMode.Q)
+            OR (Config.%X5 AND statExternalFault)
+            OR (AutoMode.Q AND EnableAuto)
+            OR (ManualMode.Q AND EnableManual)) THEN
+            statMaintenance := FALSE;
+        END_IF;
+    ELSE
+        IF EnableMaintenance THEN
+            IF NOT statExternalFault AND Control.%X3 THEN
+                statMaintenanceHMI := TRUE;
+            END_IF;
+            IF statExternalFault
+                OR Control.%X1
+                OR Control.%X2 THEN
+                statMaintenanceHMI := FALSE;
+            END_IF;
+        END_IF;
+    END_IF;
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: Process state decode
+// Decodes ProcessStateWord into individual BOOL outputs for easy use in PLC logic.
+// States match FB_PasteurizationFSM and AppData_DB.Proc.StateWord.
+// =============================================================================
+REGION 
+    
+    ProcIdle := (ProcessStateWord = 0);
+    ProcFillingBalance := (ProcessStateWord = 1);
+    ProcFillingHeat := (ProcessStateWord = 2);
+    ProcHeating := (ProcessStateWord = 3);
+    ProcPasteurising := (ProcessStateWord = 4);
+    ProcTransferring := (ProcessStateWord = 5);
+    ProcCooling := (ProcessStateWord = 6);
+    ProcDraining := (ProcessStateWord = 7);
+    ProcCipRinse := (ProcessStateWord = 8);
+    ProcCipWash := (ProcessStateWord = 9);
+    ProcCipFinalRinse := (ProcessStateWord = 10);
+    ProcFault := (ProcessStateWord = 99);
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: Process commands
+// Process Start / Stop / CIP commands are only allowed in Auto mode.
+// Commands are generated as single-scan pulses (rising edge of HMI control bits).
+// =============================================================================
+REGION 
+    
+    tmpAutoActive := statAutomatic OR statAutomaticHMI;
+    tmpManualActive := statManual OR statManualHMI;
+    
+    // Process Start â€” allowed only in Auto, only when Idle, no fault
+    tmpProcessStartCmd := FALSE;
+    IF tmpAutoActive
+        AND ProcIdle
+        AND NOT statExternalFault
+        AND NOT ProcessFaultActive THEN
+        IF ProcessStartEdge.Q THEN
+            tmpProcessStartCmd := TRUE;
+        END_IF;
+    END_IF;
+    
+    // Process Stop / Fault Reset â€” allowed in Auto or Manual, any state
+    tmpProcessStopCmd := FALSE;
+    IF (tmpAutoActive OR tmpManualActive) AND ProcessStopEdge.Q THEN
+        tmpProcessStopCmd := TRUE;
+    END_IF;
+    
+    // CIP Start â€” allowed only in Auto, only when Idle
+    tmpCipCmd := FALSE;
+    IF tmpAutoActive AND ProcIdle AND CipStartEdge.Q THEN
+        tmpCipCmd := TRUE;
+    END_IF;
+    
+    // Drive outputs â€” hold for one scan only (edge-based)
+    CmdProcessStart := tmpProcessStartCmd;
+    CmdProcessStop := tmpProcessStopCmd;
+    CmdCipStart := tmpCipCmd;
+    
+    // CmdAutoMode follows Auto mode state
+    CmdAutoMode := tmpAutoActive;
+    
+END_REGION
+
+
+// =============================================================================
+// REGION: Outputs
+// =============================================================================
+REGION 
+    
+    // Mode outputs
+    Auto := statAutomatic OR statAutomaticHMI;
+    Manual := statManual OR statManualHMI;
+    Maintenance := statMaintenance OR statMaintenanceHMI;
+    Error := statExternalFault;
+    
+    
+    // Byte 0 (bits 0-7): mode and error flags
+    Status.%X0 := EnableAuto;           // Auto enable
+    Status.%X1 := EnableManual;         // Manual enable
+    Status.%X2 := EnableMaintenance;    // Maintenance enable
+    Status.%X3 := statAutoSelected;     // Auto selected
+    Status.%X4 := Auto;                 // Auto active
+    Status.%X5 := Manual;               // Manual active
+    Status.%X6 := Maintenance;          // Maintenance active
+    Status.%X7 := statExternalFault;    // External error
+    
+    // Byte 1 (bits 8-15): process state flags
+    Status.%X8 := ProcessRunning;       // Process sequence running
+    Status.%X9 := CipActive;            // CIP active
+    Status.%X10 := ProcessFaultActive;   // Process fault active
+    Status.%X11 := ProcIdle;             // Process idle
+    Status.%X12 := ProcHeating;          // Heating in progress
+    Status.%X13 := ProcPasteurising;     // Pasteurising in progress
+    Status.%X14 := ProcCooling;          // Cooling in progress
+    Status.%X15 := ProcFault;            // Process fault state
+    
+END_REGION
+END_FUNCTION_BLOCK

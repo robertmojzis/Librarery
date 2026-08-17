@@ -1,0 +1,9 @@
+﻿TYPE "Drive_Input"
+   STRUCT
+      Start : Bool;
+      Reset : Bool;
+      Direction : Bool;
+      Setpoint : Int;
+   END_STRUCT;
+
+END_TYPE

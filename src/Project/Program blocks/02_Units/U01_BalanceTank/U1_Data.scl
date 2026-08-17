@@ -1,0 +1,30 @@
+﻿DATA_BLOCK "U1_Data"
+{ S7_Optimized_Access := 'TRUE' }
+   STRUCT
+      ValveA : Struct
+         Control : Struct
+            CommandA : Bool;
+            CommandB : Bool;
+         End_Struct;
+         Status : Struct
+            Auto : Bool;
+            Manual : Bool;
+            PositionA : Bool;
+            PositionB : Bool;
+         End_Struct;
+         HMI : "Valve2Coil_HMI";
+         Error : "Valve2Coil_Alarm";
+      End_Struct;
+      Level : Struct
+         Control : Struct
+            Enable : Bool;
+         End_Struct;
+         HMI : "AnalogInput_HMI";
+         Error : "AnalogInput_Error";
+      End_Struct;
+   END_STRUCT;
+
+
+BEGIN
+
+END_DATA_BLOCK

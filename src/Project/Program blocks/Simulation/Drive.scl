@@ -1,0 +1,58 @@
+﻿FUNCTION_BLOCK "Drive"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Fault : Bool;
+      SpeedTime : Real;
+      SpeedMax : Real;
+      SpeedMaxLim : Real;
+      SpeedMinLim : Real;
+      TorqueSetpoint : Real;
+      TorqueTime : Real;
+      TorqueMax : Real;
+      TorqueMaxLim : Real;
+      TorqueMinLim : Real;
+      Cycle : Real;
+   END_VAR
+
+   VAR_IN_OUT
+      IN : "Drive_Input";
+      OUT : "Drive_Output";
+   END_VAR
+
+   VAR
+      RampSpeed : "RampVariableValue";
+      RampTorque : "RampVariableValue";
+   END_VAR
+
+BEGIN
+
+
+REGION 
+    // Statement section REGION
+    RampSpeed(Enable :=IN.Start,
+               Setpoint :=IN.Setpoint,
+               Times :=SpeedTime,
+               Cycle :=Cycle,
+               MaximumSPeed :=SpeedMax,
+               Limit_MAX_Speed :=SpeedMaxLim,
+               Limit_MIN_Speed :=SpeedMinLim,
+               CurrentValue =>OUT.Speed);
+END_REGION
+REGION 
+    // Statement section REGION
+    RampTorque(Enable  := IN.Start,
+               Setpoint  := TorqueSetpoint,
+               Times  := TorqueTime,
+               Cycle  := Cycle,
+               MaximumSPeed  := TorqueMax,
+               Limit_MAX_Speed  := TorqueMaxLim,
+               Limit_MIN_Speed  := TorqueMinLim,
+               CurrentValue  => OUT.Torque);
+END_REGION
+REGION 
+    // Statement section REGION
+    OUT.Ready := NOT OUT.Fault;
+    OUT.Running := OUT.Speed > 0;
+    OUT.Fault := Fault;
+END_REGION
+END_FUNCTION_BLOCK

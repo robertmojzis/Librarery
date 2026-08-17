@@ -1,0 +1,22 @@
+﻿FUNCTION_BLOCK "FB_BalanceTank"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR
+      ValveA : "Valve2Coil";
+      Level : "AnalogInput";
+      Inlet : "EM_Inlet";
+   END_VAR
+
+BEGIN
+// Network 1: Scaling parameters Balance tank level
+"U1_Data".Level.HMI.DigitalMax := 27648;
+"U1_Data".Level.HMI.DigitalMin := 0;
+"U1_Data".Level.HMI.PhysicalMax := 100;
+"U1_Data".Level.HMI.PhysicalMin := 0;
+
+// Network 2
+Level(Alarms => "U1_Data".Level.Error,
+        HMI := "U1_Data".Level.HMI);
+
+// Network 3: Equipment module Inlet
+Inlet();
+END_FUNCTION_BLOCK

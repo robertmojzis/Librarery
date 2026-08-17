@@ -1,12 +1,12 @@
-FUNCTION_BLOCK "EM_Inlet"
+﻿FUNCTION_BLOCK "EM_Inlet"
 { S7_Optimized_Access := 'TRUE' }
    VAR
       ValveA : "Valve2Coil";
    END_VAR
 
 BEGIN
-// Network 1: Valve A -
-#ValveA(AutoMode := "Data".Status.Auto,
+// Network 1: Valve A - 
+ValveA(AutoMode := "Data".Status.Auto,
         ManualMode := "Data".Status.Manual,
         SupplyOk := "Data".Status.SupplyOk,
         MediumOk := "Data".Status.MediumOk,
@@ -26,6 +26,4 @@ BEGIN
         CoilB => "ValveA_Close",
         Alarm => "U1_Data".ValveA.Error,
         HMI := "U1_Data".ValveA.HMI);
-
-// Networks 2-4: empty (no logic in TIA project)
 END_FUNCTION_BLOCK

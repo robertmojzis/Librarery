@@ -1,0 +1,23 @@
+﻿DATA_BLOCK "Data"
+{ S7_Optimized_Access := 'TRUE' }
+   STRUCT
+      Control : Struct
+         Ack : Bool;
+      End_Struct;
+      Status : Struct
+         Fault : Bool;
+         Auto : Bool;
+         Manual : Bool;
+         SupplyOk : Bool;
+         MediumOk : Bool;
+         EstopOk : Bool;
+      End_Struct;
+      Setpoint : Struct
+         TempHeatTank : Int;
+      End_Struct;
+   END_STRUCT;
+
+
+BEGIN
+
+END_DATA_BLOCK

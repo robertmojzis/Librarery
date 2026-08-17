@@ -1,0 +1,14 @@
+﻿DATA_BLOCK "Test"
+{ S7_Optimized_Access := 'TRUE' }
+   STRUCT
+      Runtime : LReal;
+      Mixer : "Drive_Input";
+      Pump : "Drive_Input";
+      WaterPump : "Drive_Input";
+      Cycle : Real;
+   END_STRUCT;
+
+
+BEGIN
+
+END_DATA_BLOCK

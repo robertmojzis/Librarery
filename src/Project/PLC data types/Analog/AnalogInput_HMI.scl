@@ -1,0 +1,15 @@
+﻿TYPE "AnalogInput_HMI"
+   STRUCT
+      Status : Word;
+      Control : Word;
+      PhysicalMax : Real;
+      PhysicalMin : Real;
+      DigitalMax : Int;
+      DigitalMin : Int;
+      HighLimitFault : Real;
+      HighLimitWarning : Real;
+      LowLimitWarning : Real;
+      LowLimitFault : Real;
+   END_STRUCT;
+
+END_TYPE

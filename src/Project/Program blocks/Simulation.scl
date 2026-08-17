@@ -1,0 +1,191 @@
+﻿FUNCTION_BLOCK "Simulation"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR
+      TempHeatTank : "RampVariableValue";
+      ValveA : "PneumaticValve";
+      ValveB : "PneumaticValve";
+      ValveC : "PneumaticValve";
+      BalanceTankLevel : "TankLevel";
+      HeatingTankLevel : "TankLevel";
+      CoolTankLevel : "TankLevel";
+      Mixer : "Drive";
+      Pump : "Drive";
+      WaterPump : "Drive";
+      TempBalanceTank : "RampVariableValue";
+      TempCoolTank : "RampVariableValue";
+      TempLiquidHeatTank : "RampVariableValue";
+      ValveD : "PneumaticValve";
+   END_VAR
+
+   VAR_TEMP
+      FillMode : Bool;
+      Time : Real;
+      Enable : Bool;
+      Setpoint : Real;
+   END_VAR
+
+BEGIN
+// Network 1: // ---------------------------------------------------- DRIVES --------------------------------------------------------- //
+
+// Network 2: Mixer drive
+Mixer(SpeedTime := 10.0,
+        SpeedMax := 27465.0,
+        SpeedMaxLim := 300.0,
+        SpeedMinLim := 310.0,
+        TorqueSetpoint := 20550.0,
+        TorqueTime := 6.0,
+        TorqueMax := 27645.0,
+        TorqueMaxLim := 50.0,
+        TorqueMinLim := 50.0,
+        Cycle := "Test".Cycle,
+        IN := "Mixer_IN",
+        OUT := "Mixer_Out");
+
+// Network 3: Pump drive
+Pump(SpeedTime := 4.0,
+        SpeedMax := 27465.0,
+        SpeedMaxLim := 360.0,
+        SpeedMinLim := 280.0,
+        TorqueSetpoint := 20550.0,
+        TorqueTime := 6.0,
+        TorqueMax := 27645.0,
+        TorqueMaxLim := 50.0,
+        TorqueMinLim := 50.0,
+        Cycle := "Test".Cycle,
+        IN := "Pump_IN",
+        OUT := "Pump_Out");
+
+// Network 4: Water pump drive
+WaterPump(SpeedTime := 5.0,
+        SpeedMax := 27465.0,
+        SpeedMaxLim := 450.0,
+        SpeedMinLim := 300.0,
+        TorqueSetpoint := 16480.0,
+        TorqueTime := 4.0,
+        TorqueMax := 27465.0,
+        TorqueMaxLim := 50.0,
+        TorqueMinLim := 50.0,
+        Cycle := "Test".Cycle,
+        IN := "WaterPump_IN",
+        OUT := "WaterPump_OUT");
+
+// Network 5: // ------------------------------------------------------  Process values ----------------------------------------------------------------- // 
+
+// Network 6: Valve A
+ValveA(Enable := TRUE,
+        Extend_Command := "ValveA_Open",
+        Retract_Command := "ValveA_Close",
+        Sensor_Retracted => "ValveA_Closed",
+        Sensor_Extended => "ValveA_Opened");
+
+// Network 7: Valve B
+ValveB(Enable := TRUE,
+        Extend_Command := "ValveB_Open",
+        Retract_Command := "ValveB_Close",
+        Sensor_Retracted => "ValveB_Closed",
+        Sensor_Extended => "ValveB_Opened");
+
+// Network 8: Valve C
+ValveC(Enable := TRUE,
+        Extend_Command := "ValveC_Open",
+        Retract_Command := "ValveC_Close",
+        Sensor_Retracted => "ValveC_Closed",
+        Sensor_Extended => "ValveC_Opened");
+
+// Network 9: Valve D
+ValveD(Enable := TRUE,
+        Extend_Command := "ValveD_Open",
+        Retract_Command := "ValveD_Close",
+        Sensor_Retracted => "ValveD_Closed",
+        Sensor_Extended => "ValveD_Opened");
+
+// Network 10: Temperature balance tank
+TempBalanceTank(Enable := TRUE,
+        Setpoint := 12450.0,
+        Times := 20.0,
+        Cycle := "Test".Cycle,
+        MaximumSPeed := 27645.0,
+        Limit_MAX_Speed := 30.0,
+        Limit_MIN_Speed := 35.0,
+        CurrentValue => "TempBalanceTank");
+
+// Network 11: Temperature heat tank
+TempHeatTank(Enable := "AppData".Control.HeatingOn,
+        Setpoint := "Data".Setpoint.TempHeatTank,
+        Times := 25.0,
+        Cycle := "Test".Cycle,
+        MaximumSPeed := 27645.0,
+        Limit_MAX_Speed := 150.0,
+        Limit_MIN_Speed := 120.0,
+        CurrentValue => "TempHeatingTank");
+
+// Network 12
+TempLiquidHeatTank(Enable := "AppData".Status.HeatingON,
+        Setpoint := Setpoint);
+
+// Network 13: Temperature cooling tank
+TempCoolTank(Enable := TRUE,
+        Setpoint := 10400.0,
+        Times := 0.0,
+        Cycle := "Test".Cycle,
+        MaximumSPeed := 27645.0,
+        Limit_MAX_Speed := 100.0,
+        Limit_MIN_Speed := 100.0,
+        CurrentValue => "TempCoolingTank");
+
+// Network 14: Balanced tank level konfig
+IF "ValveA_Opened" AND  "ValveB_Closed" THEN
+    Time := 40;
+    FillMode := TRUE;
+ELSIF "ValveA_Opened" AND "ValveB_Opened" THEN
+    Time := 50;
+    FillMode := FALSE;
+END_IF;
+Enable := "ValveA_Opened" OR "ValveB_Opened";
+
+// Network 15: Level balance tank
+BalanceTankLevel(Enable := Enable,
+        EmptyTime := Time,
+        FillMode := FillMode,
+        Impulz := "Clock_1Hz",
+        Level => "AppData".Actual.LevelBalanceTank);
+
+// Network 16: Heating tank level konfig
+IF "ValveB_Opened" AND "ValveC_Closed" THEN
+    Time := 35;
+    FillMode := TRUE;
+ELSIF "ValveB_Opened" AND "ValveC_Opened" THEN
+    Time := 200;
+    FillMode := FALSE;
+ELSIF "ValveB_Closed" AND "ValveC_Opened" THEN
+    Time := 35;
+    FillMode := FALSE;
+END_IF;
+Enable := "ValveB_Opened" OR "ValveC_Opened";
+
+// Network 17: Level heating tank
+HeatingTankLevel(Enable := Enable,
+        EmptyTime := Time,
+        FillMode := FillMode,
+        Impulz := "Clock_1Hz",
+        Level => "AppData".Actual.LevelHeatTank);
+
+// Network 18: Cooling tank level konfig
+IF "ValveC_Opened" AND "ValveD_Closed" THEN
+    Time := 35;
+    FillMode := TRUE;
+ELSIF "ValveC_Opened" AND "ValveD_Opened" THEN
+    Time := 200;
+    FillMode := FALSE;
+END_IF;
+Enable := "ValveC_Opened" OR "ValveD_Opened";
+
+// Network 19: level cooling tank
+CoolTankLevel(Enable := Enable,
+        EmptyTime := 45.0,
+        FillMode := FillMode,
+        Impulz := "Clock_1Hz",
+        Level => "AppData".Actual.LevelCoolTank);
+
+// Network 20: // ----------------------------------------------------------------- Valves --------------------------------------------------------------- //
+END_FUNCTION_BLOCK

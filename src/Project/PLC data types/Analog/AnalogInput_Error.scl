@@ -1,0 +1,11 @@
+﻿TYPE "AnalogInput_Error"
+   STRUCT
+      OutOfRange : Bool;
+      BrokenWire : Bool;
+      HighLimitError : Bool;
+      HighLimitWarning : Bool;
+      LowLimitWarning : Bool;
+      LowLimitError : Bool;
+   END_STRUCT;
+
+END_TYPE

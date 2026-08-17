@@ -1,0 +1,17 @@
+﻿FUNCTION "Pasterization" : Void
+{ S7_Optimized_Access := 'TRUE' }
+
+
+BEGIN
+// Network 1: Unit balance tank
+"BalanceTank_DB"();
+
+// Network 2: Unit heating tank
+"HeatingTank_DB"();
+
+// Network 3: Unit cooling tank
+"CoolingTank_DB"();
+
+// Network 4: Process sequence
+"PasteurizationFSM_DB"();
+END_FUNCTION

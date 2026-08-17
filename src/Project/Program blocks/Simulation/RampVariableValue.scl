@@ -1,0 +1,84 @@
+﻿FUNCTION_BLOCK "RampVariableValue"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Enable : Bool;
+      Setpoint : Real;
+      Times : Real;
+      Cycle : Real;
+      MaximumSPeed : Real;
+      Limit_MAX_Speed : Real;
+      Limit_MIN_Speed : Real;
+   END_VAR
+
+   VAR_OUTPUT
+      CurrentValue : Real;
+      In_Target_Zone : Bool;
+   END_VAR
+
+   VAR
+      Direction : Real := 1.0;
+      RunTimeStatus : Int;
+      Last_Value_Speed : Real;
+   END_VAR
+
+   VAR_TEMP
+      SystemTime : LDT;
+      NanoSeconds : LInt;
+      RandomFactor : Real;
+      StepDelta : Real;
+      FinalRandomValue : Real;
+   END_VAR
+
+BEGIN
+IF Enable THEN
+    // 1. Generovanie náhodného faktora zo systémových hodín
+    RunTimeStatus := RD_SYS_T(SystemTime);
+    NanoSeconds := LDT_TO_LINT(SystemTime);
+    
+    // Získanie hodnoty 0.1 až 1.0 pomocou Modulo operácie na nanosekundách
+    RandomFactor := ABS(LINT_TO_REAL(NanoSeconds MOD 100) / 100.0);
+    IF RandomFactor < 0.1 THEN
+        RandomFactor := 0.1;
+    END_IF;
+    FinalRandomValue := Limit_MIN_Speed + (RandomFactor * (Limit_MAX_Speed - Limit_MIN_Speed));
+    
+    // 2. Základný výpočet kroku (Delta)
+    IF Times > 0.0 THEN
+        StepDelta := (MaximumSPeed / Times) * Cycle;
+    ELSE
+        StepDelta := 0.0;
+    END_IF;
+    
+    // 3. Rozhodovacia logika (Rampa vs. Oscilácia)
+    
+    // FÁZA A: Nábeh kým nedosiahneme spodnú hranicu
+    IF CurrentValue < Setpoint - Limit_MIN_Speed THEN
+        CurrentValue := CurrentValue + StepDelta;
+        
+        // FÁZA B: Náhodná oscilácia v medziach
+    ELSE
+        In_Target_Zone := TRUE;
+        
+        // Kontrola limitov a zmena smeru
+        IF CurrentValue >= Setpoint + Limit_MAX_Speed THEN
+            Direction := -1.0;
+        ELSIF CurrentValue <= Setpoint - Limit_MIN_Speed THEN
+            Direction := 1.0;
+        END_IF;
+        
+        // Aplikácia náhodného pohybu s využitím faktora náhody
+        CurrentValue := CurrentValue + (Direction *FinalRandomValue);
+        IF CurrentValue < Setpoint - Limit_MIN_Speed THEN
+            CurrentValue := Setpoint - Limit_MIN_Speed;
+        ELSIF CurrentValue >= Setpoint + Limit_MAX_Speed THEN
+            CurrentValue := Setpoint + Limit_MAX_Speed;
+        END_IF;
+    END_IF;
+    
+ELSE
+    // Reset pri vypnutí Enable
+    CurrentValue := 0.0;
+    In_Target_Zone := FALSE;
+    Direction := 1.0;
+END_IF;
+END_FUNCTION_BLOCK

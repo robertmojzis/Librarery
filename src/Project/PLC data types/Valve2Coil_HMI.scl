@@ -1,0 +1,7 @@
+﻿TYPE "Valve2Coil_HMI"
+   STRUCT
+      Status : Word;
+      Control : Word;
+   END_STRUCT;
+
+END_TYPE

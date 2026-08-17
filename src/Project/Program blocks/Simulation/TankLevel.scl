@@ -1,0 +1,92 @@
+﻿FUNCTION_BLOCK "TankLevel"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Enable : Bool;  // TRUE = FB is active
+      EmptyTime : Real;  // Seconds to empty or fill 100% of the tank
+      FillMode : Bool;  // FALSE = emptying, TRUE = filling
+      Impulz : Bool;
+   END_VAR
+
+   VAR_OUTPUT
+      Level : Real;  // Tank level 0.0 - 100.0 [%]
+      Tank_Empty : Bool;  // TRUE when Level <= 0%
+      Tank_Full : Bool;  // TRUE when Level >= 100%
+      Running : Bool;  // TRUE when level is actively changing
+   END_VAR
+
+   VAR
+      _CycleTON : TON_TIME;  // 10ms cycle timer
+      _LastBit : Bool;  // Previous state for edge detection
+      _Initialized : Bool;  // First scan flag
+      Edge : Bool;
+      Part : Real;
+   END_VAR
+
+   VAR_TEMP
+      _CycleStep : Real;  // Level change per 10ms tick [%]
+      _TickEdge : Bool;  // Rising edge of the 10ms tick pulse
+   END_VAR
+
+BEGIN
+
+
+// -------------------------------------------------------------------------
+// INIT: set starting level on first scan
+// -------------------------------------------------------------------------
+IF NOT _Initialized THEN
+    Level := 50.0;  // Tank starts half-full
+    Tank_Full := FALSE;
+    Tank_Empty := FALSE;
+    Running := FALSE;
+    _Initialized := TRUE;
+END_IF;
+
+// -------------------------------------------------------------------------
+// GUARD: EmptyTime must be positive to avoid division by zero
+// -------------------------------------------------------------------------
+IF EmptyTime <= 0.0 THEN
+    Running := FALSE;
+    RETURN;
+END_IF;
+
+// -------------------------------------------------------------------------
+// 10ms TICK GENERATOR using TON
+// When Q goes TRUE, IN is forced FALSE which resets the timer.
+// This creates a repeating pulse every 10ms.
+// -------------------------------------------------------------------------
+
+// -------------------------------------------------------------------------
+// LEVEL UPDATE - executes once per 10ms tick
+// -------------------------------------------------------------------------
+IF Enable THEN
+    // Part calculation
+    Part := 100 / EmptyTime;
+    
+    IF Impulz AND NOT Edge THEN
+        IF FillMode THEN
+            Level := Level + Part;
+        ELSE
+            Level := Level - Part;
+        END_IF;
+    END_IF;
+    
+    IF Impulz THEN
+        Edge := TRUE;
+    ELSE
+        Edge := FALSE;
+    END_IF;
+    
+    IF Level <= 0 THEN
+        Level := 0;
+    END_IF;
+    IF Level >= 100 THEN
+        Level := 100;
+    END_IF;
+END_IF;
+    
+// -------------------------------------------------------------------------
+// STATUS FLAGS - updated every scan regardless of tick
+// -------------------------------------------------------------------------
+Tank_Empty := (Level <= 0.0);
+Tank_Full := (Level >= 100.0);
+END_FUNCTION_BLOCK

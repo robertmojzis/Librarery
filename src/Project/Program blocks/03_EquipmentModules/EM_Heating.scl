@@ -1,0 +1,7 @@
+﻿FUNCTION_BLOCK "EM_Heating"
+{ S7_Optimized_Access := 'TRUE' }
+
+
+BEGIN
+
+END_FUNCTION_BLOCK

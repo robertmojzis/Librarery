@@ -1,0 +1,11 @@
+﻿TYPE "Valve2Coil_Alarm"
+   STRUCT
+      LeaveA_Error : Bool;  // Valve did not leave the position on time 
+      LeaveB_Error : Bool;  // Valve did not leave the position on time 
+      MoveA_Error : Bool;  // Valve did not move to position on time 
+      MoveB_Error : Bool;  // Valve did not move to position on time 
+      Feedback_Error : Bool;  // Both feedback sensors are active
+      Command_Error : Bool;  // Both commands are active 
+   END_STRUCT;
+
+END_TYPE

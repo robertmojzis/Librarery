@@ -1,0 +1,220 @@
+﻿FUNCTION_BLOCK "Process"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR
+      Mixer : "FB_Drive";
+      Pump : "FB_Drive";
+      WaterPump : "FB_Drive";
+      ValveA : "Valve2Coil";
+      ValveB : "Valve2Coil";
+      ValveC : "Valve2Coil";
+      ValveD : "Valve2Coil";
+      StateManager : "ProductionModeControl";
+      HMI : Struct
+         ValveA_HMI : "Valve2Coil_HMI";
+         ValveB_HMI : "Valve2Coil_HMI";
+         ValveC_HMI : "Valve2Coil_HMI";
+         ValveD_HMI : "Valve2Coil_HMI";
+         TempBalanceTank : "AnalogInput_HMI";
+         TemHeatTank : "AnalogInput_HMI";
+         TempLiquidHeatTank : "AnalogInput_HMI";
+         TempCoolingTank : "AnalogInput_HMI";
+         TempHeatTankSet : "AnalogOutput_HMI";
+      End_Struct;
+      TempBalanceTank : "AnalogInput";
+      TempHeatTank : "AnalogInput";
+      TempLiquidHeatTank : "AnalogInput";
+      TempCoolingTank : "AnalogInput";
+      TempHeatTankSet : "AnalogOutput";
+   END_VAR
+
+   VAR_TEMP
+      ProcessRunning : Bool;
+      CipActive : Bool;
+      ProcessFault : Bool;
+   END_VAR
+
+BEGIN
+// Network 1: // -------------------- Process control ------------------------------ //
+
+// Network 2: State manager
+StateManager(PowerOk := TRUE,
+        EstopOk := TRUE,
+        NoFault := NOT "Data".Status.Fault,
+        EnableAuto := NOT "Data".Status.Fault AND NOT "AppData".Proc.CipActive,
+        EnableManual := NOT "Data".Status.Auto,
+        EnableMaintenance := FALSE,
+        HmiControl := TRUE,
+        AutoSelected := "AppData".Control.AutoMode,
+        AutoStart := "AppData".Control.StartCmd,
+        MaintenanceStart := FALSE,
+        Stop := "AppData".Control.StopCmd,
+        ProcessRunning := ProcessRunning,
+        ProcessFaultActive := ProcessFault,
+        CipActive := CipActive,
+        Auto => "Data".Status.Auto,
+        Manual => "Data".Status.Manual,
+        Error => "Data".Status.Fault);
+
+// Network 3: // ------------------------------ Temperatures ------------------------------------------ // 
+
+// Network 4: Scaling parameters Balance tank temperature
+HMI.TempBalanceTank.DigitalMax := 27648;
+HMI.TempBalanceTank.DigitalMin := 0;
+HMI.TempBalanceTank.PhysicalMax := 120.0;
+HMI.TempBalanceTank.PhysicalMin := -45.0;
+
+// Network 5: Temperatue Balance tank
+TempBalanceTank(SupplyOk := TRUE,
+        Input := "TempBalanceTank",
+        HMI := HMI.TempBalanceTank);
+
+// Network 6: Scaling parameters heat tank temperature
+HMI.TemHeatTank.DigitalMax := 27648;
+HMI.TemHeatTank.DigitalMin := 0;
+HMI.TemHeatTank.PhysicalMax := 120.0;
+HMI.TemHeatTank.PhysicalMin := -45.0;
+
+// Network 7: Temperature Head tank
+TempHeatTank(SupplyOk := TRUE,
+        Input := "TempHeatingTank",
+        HMI := HMI.TemHeatTank);
+
+// Network 8: Scaling parameters liquid heat tank temperature
+HMI.TempLiquidHeatTank.DigitalMax := 27648;
+HMI.TempLiquidHeatTank.DigitalMin := 0;
+HMI.TempLiquidHeatTank.PhysicalMax := 120.0;
+HMI.TempLiquidHeatTank.PhysicalMin := -45.0;
+
+// Network 9: Temeprature liquid heat tank
+TempLiquidHeatTank(SupplyOk := TRUE,
+        Input := "TempLiquidHeatTank",
+        HMI := HMI.TempLiquidHeatTank);
+
+// Network 10: Scaling parameters cooling tank temperature
+HMI.TempCoolingTank.DigitalMax := 27648;
+HMI.TempCoolingTank.DigitalMin := 0;
+HMI.TempCoolingTank.PhysicalMax := 120.0;
+HMI.TempCoolingTank.PhysicalMin := -45.0;
+
+// Network 11: Temperature cooling tank
+TempCoolingTank(SupplyOk := TRUE,
+        Input := "TempCoolingTank",
+        HMI := HMI.TempCoolingTank);
+
+// Network 12: Heat tank tempoerature setpoint
+TempHeatTankSet(SupplyOk := TRUE,
+        Input := "AppData".Setpoint.TempHeatTank,
+        HMI := HMI.TempHeatTankSet);
+
+// Network 13: // ------------------------------------- Actuators ---------------------------------------- //
+
+// Network 14: Valve A
+ValveA(AutoMode := "Data".Status.Auto,
+        ManualMode := "Data".Status.Manual,
+        SupplyOk := TRUE,
+        MediumOk := TRUE,
+        Interlock := TRUE,
+        EstopOk := TRUE,
+        CtrlA := "AppData".Control.OpenA,
+        CtrlB := "AppData".Control.CloseA,
+        FeedbackA := "ValveA_Opened",
+        FeedbackB := "ValveA_Closed",
+        LeaveA := T#1s,
+        LeaveB := T#1s,
+        MoveToA := T#1s,
+        MoveToB := T#1s,
+        PulseLenght := T#1s,
+        CoilA => "ValveA_Open",
+        CoilB => "ValveA_Close",
+        HMI := HMI.ValveA_HMI);
+
+// Network 15: Valve B
+ValveB(AutoMode := "Data".Status.Auto,
+        ManualMode := "Data".Status.Manual,
+        SupplyOk := TRUE,
+        MediumOk := TRUE,
+        Interlock := TRUE,
+        EstopOk := TRUE,
+        CtrlA := "AppData".Control.OpenB,
+        CtrlB := "AppData".Control.CloseB,
+        Ack := "Data".Control.Ack,
+        FeedbackA := "ValveB_Opened",
+        FeedbackB := "ValveB_Closed",
+        LeaveA := T#1s,
+        LeaveB := T#1s,
+        MoveToA := T#1s,
+        MoveToB := T#1s,
+        PulseLenght := T#1s,
+        CoilA => "ValveB_Open",
+        CoilB => "ValveB_Close",
+        HMI := HMI.ValveB_HMI);
+
+// Network 16: Valve C
+ValveC(ManualMode := "Data".Status.Manual,
+        SupplyOk := TRUE,
+        MediumOk := TRUE,
+        Interlock := TRUE,
+        EstopOk := TRUE,
+        CtrlA := "AppData".Control.OpenC,
+        CtrlB := "AppData".Control.CloseC,
+        Ack := "Data".Control.Ack,
+        Type := 1,
+        FeedbackA := "ValveC_Opened",
+        FeedbackB := "ValveC_Closed",
+        LeaveA := T#1s,
+        LeaveB := T#1s,
+        MoveToA := T#1s,
+        MoveToB := T#1s,
+        PulseLenght := T#1s,
+        CoilA => "ValveC_Open",
+        CoilB => "ValveC_Close",
+        HMI := HMI.ValveC_HMI);
+
+// Network 17: Valve D
+ValveD(SupplyOk := TRUE,
+        MediumOk := TRUE,
+        Interlock := TRUE,
+        EstopOk := TRUE,
+        LeaveA := T#1s,
+        LeaveB := T#1s,
+        MoveToA := T#1s,
+        MoveToB := T#1s,
+        PulseLenght := T#1s,
+        HMI := HMI.ValveD_HMI);
+
+// Network 18: IIoT interface valves
+"AppData".Status.OpenedA := HMI.ValveA_HMI.Status.%X2;
+"AppData".Status.ClosedA := HMI.ValveA_HMI.Status.%X3;
+"AppData".Status.OpenedB := HMI.ValveB_HMI.Status.%X2;
+"AppData".Status.ClosedB := HMI.ValveB_HMI.Status.%X3;
+"AppData".Status.OpenedC := HMI.ValveC_HMI.Status.%X2;
+"AppData".Status.ClosedC := HMI.ValveC_HMI.Status.%X3;
+"AppData".Status.OpenedD := HMI.ValveD_HMI.Status.%X2;
+"AppData".Status.ClosedD := HMI.ValveD_HMI.Status.%X3;
+
+// Network 19: Mixer drive
+Mixer(Enable := "AppData".Control.MixerOn,
+        Start := "AppData".Control.MixerOn,
+        Setpoint := "AppData".Setpoint.SpeedMixer,
+        Run => "AppData".Status.MixerON,
+        ActualSpeed => "AppData".Actual.SpeedMixer,
+        ActualTorque => "AppData".Actual.TorqueMixer,
+        DRIVE_IN := "Mixer_IN",
+        DRIVE_OUT := "Mixer_Out");
+
+// Network 20: Pump drive
+Pump(Enable := TRUE,
+        Start := "ValveB_Opened",
+        Setpoint := "AppData".Setpoint.SpeedPump,
+        ActualSpeed => "AppData".Actual.SpeedPump,
+        ActualTorque => "AppData".Actual.TorquePump,
+        DRIVE_IN := "Pump_IN",
+        DRIVE_OUT := "Pump_Out");
+
+// Network 21: Water pump drive
+WaterPump(Enable := "ValveB_Closed",
+        Start := "ValveC_Opened" AND "ValveD_Opened",
+        Setpoint := "AppData".Setpoint.SpeedWaterPump,
+        DRIVE_IN := "WaterPump_IN",
+        DRIVE_OUT := "WaterPump_OUT");
+END_FUNCTION_BLOCK

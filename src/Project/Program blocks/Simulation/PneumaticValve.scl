@@ -1,0 +1,340 @@
+﻿FUNCTION_BLOCK "PneumaticValve"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Enable : Bool;  // Povolenie simulÃ¡cie
+      Extend_Command : Bool;  // PrÃ­kaz na vysunutie valca
+      Retract_Command : Bool;  // PrÃ­kaz na zasunutie valca
+      ExtensionTime : Time := T#2S;  // ÄŒas vysunutia valca
+      RetractionTime : Time := T#1S_500MS;  // ÄŒas zasunutia valca (zvyÄajne rÃ½chlejÅ¡ie)
+      SimulateDelay : Bool := TRUE;  // SimulovaÅ¥ Ñ€ÐµÃ¡lne oneskorenie pohybu
+      SimulateBounce : Bool := TRUE;  // SimulovaÅ¥ "odraz" na koncovÃ½ch polohÃ¡ch
+      BounceTime : Time := T#50MS;  // ÄŒas odrazu senzora
+      Reset : Bool;  // Reset do vÃ½chodzej polohy (zasunÃºtÃ©)
+   END_VAR
+
+   VAR_OUTPUT
+      Sensor_Retracted : Bool;  // IndukÄnÃ½ senzor - valec zasunÃºty (zadnÃ¡ poloha)
+      Sensor_Extended : Bool;  // IndukÄnÃ½ senzor - valec vysunuty (prednÃ¡ poloha)
+      IsMoving : Bool;  // TRUE keÄ sa valec pohybuje
+      IsExtending : Bool;  // TRUE pri vysÃºvanÃ­
+      IsRetracting : Bool;  // TRUE pri zasÃºvanÃ­
+      Position : Real;  // AktuÃ¡lna pozÃ­cia valca [%] (0=zasunÃºtÃ©, 100=vysunutÃ©)
+      Error : Bool;  // TRUE pri chybe (oba prÃ­kazy sÃºÄasne)
+      ErrorCode : Int;  // KÃ³d chyby (0=OK, 1=Oba prÃ­kazy aktÃ­vne, 2=Timeout)
+   END_VAR
+
+   VAR
+      CurrentState : Int;  // 0=ZasunÃºtÃ©, 1=VysÃºvanie, 2=VysunutÃ©, 3=ZasÃºvanie
+      ElapsedTime_MS : DInt;  // UplynulÃ½ Äas pohybu v milisekundÃ¡ch
+      BounceTimer_MS : DInt;  // Timer pre odraz senzora
+      IsBouncing : Bool;  // TRUE poÄas odrazu
+      BounceState : Bool;  // Stav poÄas odrazu
+      LastExtendCmd : Bool;  // PredchÃ¡dzajÃºci stav Extend
+      LastRetractCmd : Bool;  // PredchÃ¡dzajÃºci stav Retract
+      CycleTime_MS : DInt := 100;  // PredpokladanÃ½ cyklus v MS (upravte podÄ¾a potreby)
+      TimeoutTimer_MS : DInt;  // Timer pre detekciu timeoutu
+      TimeoutLimit_MS : DInt := 10000;  // Timeout limit 10 sekÃºnd
+   END_VAR
+
+   VAR_TEMP
+      ExtensionTime_MS : DInt;
+      RetractionTime_MS : DInt;
+      ExtensionTimeReal : Real;
+      RetractionTimeReal : Real;
+      ElapsedTimeReal : Real;
+      Progress : Real;
+      TempTime : Time;
+      BounceTime_MS : DInt;
+      Rising_Extend : Bool;
+      Rising_Retract : Bool;
+   END_VAR
+
+BEGIN
+
+//==============================================================================
+// SIMULÃCIA PNEUMATICKÃ‰HO VALCA S INDUKÄŒNÃMI SENZORMI
+// 
+// Simuluje realistickÃ© sprÃ¡vanie dvojÄinnÃ©ho pneumatickÃ©ho valca s:
+// - ÄŒasovo zÃ¡vislÃ½m pohybom
+// - IndukÄnÃ½mi senzormi na koncovÃ½ch polohÃ¡ch
+// - Odrazom senzora pri dosadnutÃ­ (bounce)
+// - Detekciou chÃ½b (konfliktnÃ© prÃ­kazy, timeout)
+//
+// StavovÃ½ diagram:
+//   [0] ZASUNÃšTÃ‰ â†’ (Extend) â†’ [1] VYSÃšVANIE â†’ [2] VYSUNUTÃ‰
+//                                                    â†“ (Retract)
+//   [0] ZASUNÃšTÃ‰ â† (dokonÄenÃ©) â† [3] ZASÃšVANIE â†â”€â”€â”€â”€â”˜
+//==============================================================================
+
+// Konverzia Äasov na milisekundy
+TempTime := ExtensionTime;
+ExtensionTime_MS := TIME_TO_DINT(TempTime);
+ExtensionTimeReal := DINT_TO_REAL(ExtensionTime_MS);
+
+TempTime := RetractionTime;
+RetractionTime_MS := TIME_TO_DINT(TempTime);
+RetractionTimeReal := DINT_TO_REAL(RetractionTime_MS);
+
+TempTime := BounceTime;
+BounceTime_MS := TIME_TO_DINT(TempTime);
+
+// Detekcia nÃ¡beÅ¼nÃ½ch hrÃ¡n
+Rising_Extend := Extend_Command AND NOT LastExtendCmd;
+Rising_Retract := Retract_Command AND NOT LastRetractCmd;
+
+// Reset logika
+IF Reset THEN
+    CurrentState := 0;  // ZasunÃºtÃ©
+    ElapsedTime_MS := 0;
+    Position := 0.0;
+    Sensor_Retracted := TRUE;
+    Sensor_Extended := FALSE;
+    IsMoving := FALSE;
+    IsExtending := FALSE;
+    IsRetracting := FALSE;
+    Error := FALSE;
+    ErrorCode := 0;
+    BounceTimer_MS := 0;
+    IsBouncing := FALSE;
+    TimeoutTimer_MS := 0;
+END_IF;
+
+IF Enable AND NOT Reset THEN
+    
+    //==========================================================================
+    // DETEKCIA CHÃB
+    //==========================================================================
+    
+    // KonfliktnÃ© prÃ­kazy - oba prÃ­kazy aktÃ­vne sÃºÄasne
+    IF Extend_Command AND Retract_Command THEN
+        Error := TRUE;
+        ErrorCode := 1;
+        IsMoving := FALSE;
+        IsExtending := FALSE;
+        IsRetracting := FALSE;
+        // Zastavenie pohybu pri chybe
+    ELSE
+        IF ErrorCode = 1 THEN
+            Error := FALSE;
+            ErrorCode := 0;
+        END_IF;
+        
+        //======================================================================
+        // STAVOVÃ AUTOMAT - HLAVNÃ LOGIKA POHYBU
+        //======================================================================
+        
+        CASE CurrentState OF
+                
+                //==================================================================
+                // STAV 0: ZASUNÃšTÃ‰ (Retracted position)
+                //==================================================================
+            0:
+                IsMoving := FALSE;
+                IsExtending := FALSE;
+                IsRetracting := FALSE;
+                Position := 0.0;
+                TimeoutTimer_MS := 0;
+                
+                // Senzor zasunÃºtÃ© - aktÃ­vny (s moÅ¾nosÅ¥ou odrazu)
+                IF IsBouncing THEN
+                    BounceTimer_MS := BounceTimer_MS + CycleTime_MS;
+                    IF BounceTimer_MS >= BounceTime_MS THEN
+                        IsBouncing := FALSE;
+                        BounceTimer_MS := 0;
+                        Sensor_Retracted := TRUE;
+                    ELSE
+                        // Striedanie senzora poÄas odrazu
+                        IF BounceTimer_MS MOD 20 < 10 THEN
+                            Sensor_Retracted := TRUE;
+                        ELSE
+                            Sensor_Retracted := FALSE;
+                        END_IF;
+                    END_IF;
+                ELSE
+                    Sensor_Retracted := TRUE;
+                END_IF;
+                
+                Sensor_Extended := FALSE;
+                
+                // Prechod na vysÃºvanie pri prÃ­kaze
+                IF Rising_Extend OR (Extend_Command AND NOT SimulateDelay) THEN
+                    CurrentState := 1;  // VysÃºvanie
+                    ElapsedTime_MS := 0;
+                    IsMoving := TRUE;
+                    IsExtending := TRUE;
+                    Sensor_Retracted := FALSE;  // Senzor opustÃ­ pozÃ­ciu
+                END_IF;
+                
+                //==================================================================
+                // STAV 1: VYSÃšVANIE (Extending)
+                //==================================================================
+            1:
+                IsMoving := TRUE;
+                IsExtending := TRUE;
+                IsRetracting := FALSE;
+                Sensor_Retracted := FALSE;
+                Sensor_Extended := FALSE;
+                
+                // InkrementÃ¡cia Äasu a vÃ½poÄet pozÃ­cie
+                ElapsedTime_MS := ElapsedTime_MS + CycleTime_MS;
+                TimeoutTimer_MS := TimeoutTimer_MS + CycleTime_MS;
+                
+                // Kontrola timeoutu
+                IF TimeoutTimer_MS > TimeoutLimit_MS THEN
+                    Error := TRUE;
+                    ErrorCode := 2;
+                    CurrentState := 0;  // NÃ¡vrat do vÃ½chodzej polohy
+                END_IF;
+                
+                // VÃ½poÄet progressu pohybu (0.0 - 1.0)
+                IF ExtensionTimeReal > 0.0 THEN
+                    ElapsedTimeReal := DINT_TO_REAL(ElapsedTime_MS);
+                    Progress := ElapsedTimeReal / ExtensionTimeReal;
+                    
+                    IF Progress >= 1.0 THEN
+                        Progress := 1.0;
+                        Position := 100.0;
+                        CurrentState := 2;  // VysunutÃ©
+                        IsMoving := FALSE;
+                        IsExtending := FALSE;
+                        ElapsedTime_MS := 0;
+                        
+                        // Spustenie odrazu ak je povolenÃ½
+                        IF SimulateBounce THEN
+                            IsBouncing := TRUE;
+                            BounceTimer_MS := 0;
+                        ELSE
+                            Sensor_Extended := TRUE;
+                        END_IF;
+                    ELSE
+                        // LineÃ¡rna interpolÃ¡cia pozÃ­cie
+                        Position := Progress * 100.0;
+                    END_IF;
+                ELSE
+                    // OkamÅ¾itÃ½ pohyb ak je Äas 0
+                    Position := 100.0;
+                    CurrentState := 2;
+                END_IF;
+                
+                // MoÅ¾nosÅ¥ preruÅ¡iÅ¥ pohyb spÃ¤tnÃ½m prÃ­kazom
+                IF Rising_Retract OR (Retract_Command AND NOT Extend_Command) THEN
+                    CurrentState := 3;  // ZasÃºvanie
+                    ElapsedTime_MS := 0;
+                    IsExtending := FALSE;
+                    IsRetracting := TRUE;
+                END_IF;
+                
+                //==================================================================
+                // STAV 2: VYSUNUTÃ‰ (Extended position)
+                //==================================================================
+            2:
+                IsMoving := FALSE;
+                IsExtending := FALSE;
+                IsRetracting := FALSE;
+                Position := 100.0;
+                TimeoutTimer_MS := 0;
+                
+                // Senzor vysunutÃ© - aktÃ­vny (s moÅ¾nosÅ¥ou odrazu)
+                IF IsBouncing THEN
+                    BounceTimer_MS := BounceTimer_MS + CycleTime_MS;
+                    IF BounceTimer_MS >= BounceTime_MS THEN
+                        IsBouncing := FALSE;
+                        BounceTimer_MS := 0;
+                        Sensor_Extended := TRUE;
+                    ELSE
+                        // Striedanie senzora poÄas odrazu
+                        IF BounceTimer_MS MOD 20 < 10 THEN
+                            Sensor_Extended := TRUE;
+                        ELSE
+                            Sensor_Extended := FALSE;
+                        END_IF;
+                    END_IF;
+                ELSE
+                    Sensor_Extended := TRUE;
+                END_IF;
+                
+                Sensor_Retracted := FALSE;
+                
+                // Prechod na zasÃºvanie pri prÃ­kaze
+                IF Rising_Retract OR (Retract_Command AND NOT SimulateDelay) THEN
+                    CurrentState := 3;  // ZasÃºvanie
+                    ElapsedTime_MS := 0;
+                    IsMoving := TRUE;
+                    IsRetracting := TRUE;
+                    Sensor_Extended := FALSE;  // Senzor opustÃ­ pozÃ­ciu
+                END_IF;
+                
+                //==================================================================
+                // STAV 3: ZASÃšVANIE (Retracting)
+                //==================================================================
+            3:
+                IsMoving := TRUE;
+                IsExtending := FALSE;
+                IsRetracting := TRUE;
+                Sensor_Retracted := FALSE;
+                Sensor_Extended := FALSE;
+                
+                // InkrementÃ¡cia Äasu a vÃ½poÄet pozÃ­cie
+                ElapsedTime_MS := ElapsedTime_MS + CycleTime_MS;
+                TimeoutTimer_MS := TimeoutTimer_MS + CycleTime_MS;
+                
+                // Kontrola timeoutu
+                IF TimeoutTimer_MS > TimeoutLimit_MS THEN
+                    Error := TRUE;
+                    ErrorCode := 2;
+                    CurrentState := 0;  // NÃ¡vrat do vÃ½chodzej polohy
+                END_IF;
+                
+                // VÃ½poÄet progressu pohybu (1.0 - 0.0)
+                IF RetractionTimeReal > 0.0 THEN
+                    ElapsedTimeReal := DINT_TO_REAL(ElapsedTime_MS);
+                    Progress := ElapsedTimeReal / RetractionTimeReal;
+                    
+                    IF Progress >= 1.0 THEN
+                        Progress := 1.0;
+                        Position := 0.0;
+                        CurrentState := 0;  // ZasunÃºtÃ©
+                        IsMoving := FALSE;
+                        IsRetracting := FALSE;
+                        ElapsedTime_MS := 0;
+                        
+                        // Spustenie odrazu ak je povolenÃ½
+                        IF SimulateBounce THEN
+                            IsBouncing := TRUE;
+                            BounceTimer_MS := 0;
+                        ELSE
+                            Sensor_Retracted := TRUE;
+                        END_IF;
+                    ELSE
+                        // LineÃ¡rna interpolÃ¡cia pozÃ­cie (od 100% do 0%)
+                        Position := 100.0 - (Progress * 100.0);
+                    END_IF;
+                ELSE
+                    // OkamÅ¾itÃ½ pohyb ak je Äas 0
+                    Position := 0.0;
+                    CurrentState := 0;
+                END_IF;
+                
+                // MoÅ¾nosÅ¥ preruÅ¡iÅ¥ pohyb spÃ¤tnÃ½m prÃ­kazom
+                IF Rising_Extend OR (Extend_Command AND NOT Retract_Command) THEN
+                    CurrentState := 1;  // VysÃºvanie
+                    ElapsedTime_MS := 0;
+                    IsRetracting := FALSE;
+                    IsExtending := TRUE;
+                END_IF;
+                
+        END_CASE;
+        
+    END_IF;
+    
+ELSE
+    // SimulÃ¡cia vypnutÃ¡ - zostaÅ¥ v aktuÃ¡lnom stave
+    IsMoving := FALSE;
+    IsExtending := FALSE;
+    IsRetracting := FALSE;
+END_IF;
+
+// UloÅ¾enie predchÃ¡dzajÃºcich stavov pre detekciu nÃ¡beÅ¼nej hrany
+LastExtendCmd := Extend_Command;
+LastRetractCmd := Retract_Command;
+END_FUNCTION_BLOCK

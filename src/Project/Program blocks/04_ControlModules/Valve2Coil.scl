@@ -138,9 +138,9 @@ REGION
         Impulz_Timer(IN :=statMoveA OR statMoveB,
                       PT :=PulseLenght);
         FeedBack_Timer(IN := FeedbackA AND FeedbackB,
-                        PT := );
+                        PT := FeedBackTime);
         Command_Timer(IN  := CtrlA AND CtrlB,
-                       PT  := );
+                       PT  := CommandTime);
         
         IF LeaveA = t#0s THEN
             statNoCheckLeaveA := TRUE;

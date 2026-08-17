@@ -1,0 +1,8 @@
+﻿DATA_BLOCK "HeatingTank_DB"
+{ S7_Optimized_Access := 'TRUE' }
+"FB_HeatingTank"
+
+
+BEGIN
+
+END_DATA_BLOCK

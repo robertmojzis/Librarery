@@ -1,0 +1,88 @@
+﻿DATA_BLOCK "AppData"
+{ S7_Optimized_Access := 'TRUE' }
+   STRUCT
+      Control : Struct
+         OpenA : Bool;
+         CloseA : Bool;
+         OpenB : Bool;
+         CloseB : Bool;
+         OpenC : Bool;
+         CloseC : Bool;
+         OpenD : Bool;
+         CloseD : Bool;
+         HeatingOn : Bool;
+         MixerOn : Bool;
+         AutoMode : Bool := FALSE;
+         StartCmd : Bool := FALSE;
+         StopCmd : Bool := FALSE;
+         CipCmd : Bool := FALSE;
+         MainPumpOn : Bool := FALSE;
+         WaterPumpOn : Bool := FALSE;
+      End_Struct;
+      Status : Struct
+         OpenedA : Bool;
+         ClosedA : Bool;
+         OpenedB : Bool;
+         ClosedB : Bool;
+         OpenedC : Bool;
+         ClosedC : Bool;
+         OpenedD : Bool;
+         ClosedD : Bool;
+         HeatingON : Bool;
+         MixerON : Bool;
+         WaterPumpON : Bool;
+         AutoModeActive : Bool := FALSE;
+         ProcessRunning : Bool := FALSE;
+         FaultActive : Bool := FALSE;
+         MainPumpON : Bool := FALSE;
+         _res : Bool := FALSE;
+      End_Struct;
+      Actual : Struct
+         TempBalanceTank : Real;
+         TempHeatTank : Real;
+         TempCoolTank : Real;
+         TempLiquidHeatTank : Real;
+         LevelBalanceTank : Real;
+         LevelHeatTank : Real;
+         LevelCoolTank : Real;
+         SpeedPump : Real;
+         TorquePump : Real;
+         SpeedMixer : Real;
+         TorqueMixer : Real;
+         SpeedWaterPump : Real;
+         TorqueWaterPump : Real;
+      End_Struct;
+      Setpoint : Struct
+         SpeedPump : Real;
+         TempHeatTank : Real;
+         SpeedMixer : Real;
+         SpeedWaterPump : Real;
+         LevelBalanceFill : Real := 85.0;
+         LevelHeatFill : Real := 80.0;
+         LevelCoolFill : Real := 75.0;
+         TempCooling : Real := 4.0;
+         TempMaxLimit : Real := 95.0;
+         HoldTime : Real := 15.0;
+         StepTimeout : Real := 600.0;
+         CipTemp : Real := 60.0;
+         CipRinseTime : Real := 120.0;
+         CipWashTime : Real := 300.0;
+         CipFinalRinseTime : Real := 120.0;
+         CipAfterCycle : Bool := TRUE;
+         _pad : Byte := 0;
+      End_Struct;
+      Proc : Struct
+         StateWord : DInt := 0;  // 118  stav: 0=Idle,1-10=seq,99=Fault
+         FaultCode : Int := 0;  // 120  0=OK, 1=MaxTemp, 2=Timeout, 99=Unknown
+         BatchCount : DInt := 0;  // 122  poÄet dokonÄenÃ½ch cyklov
+         HoldAccum : Real := 0.0;  // 126  akumulovanÃ½ hold time [s]
+         StepElapsed : Real := 0.0;  // 130  Äas v aktuÃ¡lnom stave [s]
+         CipActive : Bool := FALSE;  // 134 CIP prebieha (stav 8-10)
+         _pad : Bool := FALSE;  // 135 rezerva
+      End_Struct;
+   END_STRUCT;
+
+
+BEGIN
+
+END_DATA_BLOCK

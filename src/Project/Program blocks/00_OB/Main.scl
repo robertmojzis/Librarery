@@ -1,0 +1,61 @@
+﻿ORGANIZATION_BLOCK "Main"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Initial_Call : Bool;  // Initial call of this OB
+      Remanence : Bool;  // =True, if remanent data are available
+   END_VAR
+
+   VAR_TEMP
+      TmpLREAL : LReal;
+      test : Bool;
+   END_VAR
+
+BEGIN
+// Network 1
+TmpLREAL := Runtime(MEM := "Test".Runtime);
+"Test".Cycle := LREAL_TO_REAL(TmpLREAL);
+
+// Network 2
+"Mixer_IN".Start := "Test".Mixer.Start;
+"Mixer_IN".Reset := "Test".Mixer.Reset;
+"Mixer_IN".Direction := "Test".Mixer.Direction;
+"Mixer_IN".Setpoint := "Test".Mixer.Setpoint;
+
+//
+"Pump_IN".Start := "Test".Pump.Start;
+"Pump_IN".Reset := "Test".Pump.Reset;
+"Pump_IN".Direction := "Test".Pump.Direction;
+"Pump_IN".Setpoint := "Test".Pump.Setpoint;
+
+// 
+"WaterPump_IN".Start := "Test".WaterPump.Start;
+"WaterPump_IN".Reset := "Test".WaterPump.Reset;
+"WaterPump_IN".Direction := "Test".WaterPump.Direction;
+"WaterPump_IN".Setpoint := "Test".WaterPump.Setpoint;
+
+// Network 3
+"Simulation_DB"();
+
+// Network 4
+"Process_DB"();
+"Pasterization"();
+
+// Network 5
+"Test".Mixer.Start := "Mixer_IN".Start;
+"Test".Mixer.Reset := "Mixer_IN".Reset;
+"Test".Mixer.Direction := "Mixer_IN".Direction;
+"Test".Mixer.Setpoint := "Mixer_IN".Setpoint;
+
+//
+"Test".Pump.Start := "Pump_IN".Start;
+"Test".Pump.Reset := "Pump_IN".Reset;
+"Test".Pump.Direction := "Pump_IN".Direction;
+"Test".Pump.Setpoint := "Pump_IN".Setpoint;
+
+//
+"Test".WaterPump.Start := "WaterPump_IN".Start;
+"Test".WaterPump.Reset := "WaterPump_IN".Reset;
+"Test".WaterPump.Direction := "WaterPump_IN".Direction;
+"Test".WaterPump.Setpoint := "WaterPump_IN".Setpoint;
+
+END_ORGANIZATION_BLOCK

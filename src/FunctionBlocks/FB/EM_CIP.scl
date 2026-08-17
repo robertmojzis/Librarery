@@ -1,5 +1,0 @@
-FUNCTION_BLOCK "EM_CIP"
-{ S7_Optimized_Access := 'TRUE' }
-BEGIN
-// No networks contain logic in the TIA project
-END_FUNCTION_BLOCK

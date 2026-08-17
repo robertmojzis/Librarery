@@ -1,0 +1,59 @@
+﻿FUNCTION_BLOCK "FB_HeatingTank"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR
+      Level : "AnalogInput";
+      Heating : "EM_Inlet";
+      Mixer : "EM_TransferFeed";
+      ValveC : "Valve2Coil";
+      Temperature : "AnalogInput";
+   END_VAR
+
+BEGIN
+// Network 1: Scaling parameters heat tank temperature
+"U2_Data".Temperature.HMI.DigitalMax := 27648;
+"U2_Data".Temperature.HMI.DigitalMin := 0;
+"U2_Data".Temperature.HMI.PhysicalMax := 120.0;
+"U2_Data".Temperature.HMI.PhysicalMin := -45.0;
+
+// Network 2: Temperature heating tank
+Temperature(SupplyOk := "Data".Status.SupplyOk,
+        Ack := "Data".Control.Ack,
+        HMI := "U2_Data".Temperature.HMI);
+
+// Network 3: Scaling parameters heat tank temperature setpoint
+"U2_Data".Level.HMI.DigitalMax := 27648;
+"U2_Data".Level.HMI.DigitalMin := 0;
+"U2_Data".Level.HMI.PhysicalMax := 120.0;
+"U2_Data".Level.HMI.PhysicalMin := -45.0;
+
+// Network 4: Liquid level heating tank
+Level(Enable := "U2_Data".Level.Control.Enable,
+        SupplyOk := "Data".Status.SupplyOk,
+        Ack := "Data".Control.Ack,
+        HMI := "U2_Data".Level.HMI);
+
+// Network 6: Mixer 
+Mixer();
+
+// Network 7
+ValveC(AutoMode := "Data".Status.Auto,
+        ManualMode := "Data".Status.Manual,
+        SupplyOk := "Data".Status.SupplyOk,
+        MediumOk := "Data".Status.MediumOk,
+        EstopOk := "Data".Status.EstopOk,
+        EnableA := TRUE,
+        EnableB := TRUE,
+        CtrlA := "AppData".Control.OpenC,
+        CtrlB := "AppData".Control.CloseC,
+        Ack := "Data".Control.Ack,
+        FeedbackA := "ValveC_Opened",
+        FeedbackB := "ValveC_Closed",
+        LeaveA := T#1s,
+        LeaveB := T#1s,
+        MoveToA := T#1s,
+        MoveToB := T#1s,
+        PulseLenght := T#1s,
+        CoilA => "ValveC_Open",
+        CoilB => "ValveC_Close",
+        HMI := "U2_Data".ValveC.HMI);
+END_FUNCTION_BLOCK
