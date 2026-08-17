@@ -1,0 +1,294 @@
+﻿FUNCTION_BLOCK "Valve2Coil"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      AutoMode : Bool;  // Auto mode of operation
+      ManualMode : Bool;  // Manual mode of operation
+      SupplyOk : Bool;  // Power supply is ok
+      MediumOk : Bool;  // Medium supply is ok
+      Interlock : Bool;  // Interlock ok
+      EstopOk : Bool;  // E - stop ok 
+      EnableA : Bool;  // Enable movement coil A
+      EnableB : Bool;  // Enable movement coil B
+      CtrlA : Bool;  // Control movement coil A
+      CtrlB : Bool;  // Control movement coil B
+      Ack : Bool;  // Acknowledgement errors
+      Init : Bool;  // Inicialization
+      SafeConfig : Bool;  // 0 - emergency stop will disabled coil, 1 - emergency stop will disabled movement
+      Type : Bool;  // Type of distributor : 0 - impulz, 1 - Solid state  
+      FeedbackA : Bool;  // Feedback position A
+      FeedbackB : Bool;  // Feedback position B
+      LeaveA : Time;  // Monitoring time to leave the position A
+      LeaveB : Time;  // Monitoring time to leave the position B
+      MoveToA : Time;  // Monitoring time to move to position A
+      MoveToB : Time;  // Monitoring time to move to position B
+      PulseLenght : Time;  // Pulse lenght with distributor type 0
+   END_VAR
+
+   VAR_OUTPUT
+      Auto : Bool;  // Automatic active
+      Manual : Bool;  // Manual active
+      ReadyA : Bool;  // Movement A is ready 
+      ReadyB : Bool;  // Movement B is ready
+      CoilA : Bool;  // CoilA is active 
+      CoilB : Bool;  // CoilB is active 
+      Error : Bool;  // Common error
+      Alarm : "Valve2Coil_Alarm";  // Alarm structure
+   END_VAR
+
+   VAR_IN_OUT
+      HMI : "Valve2Coil_HMI";
+   END_VAR
+
+   VAR
+      statEnableAutoA : Bool;  // Enable movement to pos A auto mode
+      statEnableAutoB : Bool;  // Enable movement to pos B auto mode
+      statEnableManualA : Bool;  // Enable movement to pos A manual mode
+      statEnableManualB : Bool;  // Enable movement to pos B manual mode
+      statMoveA : Bool;  // Command to move to pos A
+      statMoveB : Bool;  // Command to move to pos B
+      statAuto : Bool;  // Auto mode active 
+      statManual : Bool;  // Manual mode active
+      statNoCheckLeaveA : Bool;  // No time check for leaving pos A
+      statNoCheckLeaveB : Bool;  // No time check for leaving pos B
+      statNoCheckMoveA : Bool;  // No time check for movement to pos A
+      statNoCheckMoveB : Bool;  // No time check for movement to pos B
+      statManualCoilA : Bool;  // Control movement coil A manual mode
+      statManualCoilB : Bool;  // Control movement coil B manual mode
+      statAutoCoilA : Bool;  // Control movement coil A auto mode 
+      statAutoCoilB : Bool;  // Control movement coil B auto mode 
+      statEnableHMI : Bool;  // Control via HMI is enabled
+      statError : Bool;  // Common error of the valve
+      LeavePosA_Timer : TON_TIME;  // Timer leave pos A
+      LeavePosB_Timer : TON_TIME;  // Timer leave pos B
+      MovePosA_Timer : TON_TIME;  // Timer move to pos A
+      MovePosB_Timer : TON_TIME;  // Timer move to pos B
+      FeedBack_Timer : TON_TIME;  // Timer for feedback error
+      Command_Timer : TON_TIME;  // Timer for command error
+      Impulz_Timer : TP_TIME;  // Impulz timer for distributor type 0
+   END_VAR
+
+   VAR CONSTANT
+      FeedBackTime : Time := T#850ms;
+      CommandTime : Time := T#850ms;
+   END_VAR
+
+BEGIN
+///////////////////////////////////// Description /////////////////////////////////////
+//                                                                                  //
+//                                                                                  //
+//                                                                                  //
+//                                                                                  //
+//                                                                                  //
+//                                                                                  //
+//////////////////////////////////////////////////////////////////////////////////////
+
+REGION 
+    // Statement section REGION
+    IF Init THEN
+        statEnableAutoA := FALSE;
+        statEnableAutoB := FALSE;
+        statMoveA := FALSE;
+        statMoveB := FALSE;
+        statAuto := FALSE;
+        statManual := FALSE;
+        statNoCheckLeaveA := FALSE;
+        statNoCheckLeaveB := FALSE;
+        statNoCheckMoveA := FALSE;
+        statNoCheckMoveB := FALSE;
+        statManualCoilA := FALSE;
+        statManualCoilB := FALSE;
+        statEnableHMI := FALSE;
+    END_IF;
+    
+END_REGION
+REGION 
+    IF AutoMode THEN
+        statAuto := TRUE;
+    END_IF;
+    IF ManualMode THEN
+        statManual := TRUE;
+    END_IF; 
+    
+END_REGION
+
+
+REGION 
+    // Statement section REGION
+    REGION 
+        // Statement section REGION
+        statEnableAutoA := EnableA AND SupplyOk AND MediumOk AND EstopOk AND Interlock AND NOT statError;
+        statEnableAutoB := EnableB AND SupplyOk AND MediumOk AND EstopOk AND Interlock AND NOT statError;
+    END_REGION
+    REGION 
+        // Statement section REGION
+        statEnableManualA := SupplyOk AND MediumOk AND EstopOk AND Interlock AND NOT statError;
+        statEnableManualB := SupplyOk AND MediumOk AND EstopOk AND Interlock AND NOT statError;
+    END_REGION
+
+    REGION 
+        // Statement section REGION
+        LeavePosA_Timer(IN :=CoilB AND FeedbackA,
+                         PT :=LeaveA);
+        LeavePosB_Timer(IN :=CoilA AND FeedbackB,
+                         PT :=LeaveB);
+        MovePosA_Timer(IN :=CoilA AND NOT FeedbackA,
+                        PT :=MoveToA);
+        MovePosB_Timer(IN :=CoilB AND NOT FeedbackB,
+                        PT :=MoveToB);
+        Impulz_Timer(IN :=statMoveA OR statMoveB,
+                      PT :=PulseLenght);
+        FeedBack_Timer(IN := FeedbackA AND FeedbackB,
+                        PT := );
+        Command_Timer(IN  := CtrlA AND CtrlB,
+                       PT  := );
+        
+        IF LeaveA = t#0s THEN
+            statNoCheckLeaveA := TRUE;
+        ELSE
+            statNoCheckLeaveA := FALSE;
+        END_IF;
+        IF LeaveB = t#0s THEN
+            statNoCheckLeaveB := TRUE;
+        ELSE
+            statNoCheckLeaveB := FALSE;
+        END_IF;
+        IF MoveToA = t#0s THEN
+            statNoCheckMoveA := TRUE;
+        ELSE
+            statNoCheckMoveA := FALSE;
+        END_IF;
+        IF MoveToB = t#0s THEN
+            statNoCheckMoveB := TRUE;
+        ELSE
+            statNoCheckMoveB := FALSE;
+        END_IF;
+    END_REGION
+END_REGION
+
+
+REGION 
+    // Automatic control of the valve
+    IF statAuto THEN
+        // Coil A
+        IF statEnableAutoA AND CtrlA THEN
+            statAutoCoilA := TRUE;
+        ELSE
+            statAutoCoilA := FALSE;
+        END_IF;
+        // Coil B
+        IF statEnableAutoB AND CtrlB THEN
+            statAutoCoilB := TRUE;
+        ELSE
+            statAutoCoilB := FALSE;
+        END_IF;
+    ELSE
+        statAutoCoilA := FALSE;
+        statAutoCoilB := FALSE;
+    END_IF;
+   
+END_REGION
+
+REGION 
+    
+    // Statement section REGIONx
+    IF statManual AND statEnableManualA AND CtrlA AND NOT CtrlB AND NOT FeedbackA THEN
+        statManualCoilA := TRUE;
+        statManualCoilB := FALSE;
+    END_IF;
+    IF (statManual AND FeedbackA) OR NOT statEnableManualA THEN
+        statManualCoilA := FALSE;
+    END_IF;
+    
+    IF statManual AND statEnableManualB AND CtrlB AND NOT CtrlA AND NOT FeedbackB THEN
+        statManualCoilB := TRUE;
+        statManualCoilA := FALSE;
+    END_IF;
+    IF (statManual AND FeedbackB) OR NOT statEnableManualB THEN
+        statManualCoilB := FALSE;
+    END_IF;
+END_REGION
+
+REGION 
+    // in progress - control from external aplication ( HMI, App ... )
+    IF statManual AND statEnableHMI THEN
+        IF HMI.Control.%X8 AND NOT HMI.Control.%X9 THEN
+            statManualCoilA := TRUE;
+        ELSE
+            statManualCoilA := FALSE;
+        END_IF;
+        IF HMI.Control.%X9 AND NOT HMI.Control.%X8 THEN
+            statManualCoilB := TRUE;
+        ELSE
+            statManualCoilB := FALSE;
+        END_IF;
+    END_IF; 
+END_REGION
+
+REGION 
+    // Statement section REGION
+    CoilA := statManualCoilA OR statAutoCoilA;
+    CoilB := statManualCoilB OR statAutoCoilB;
+    
+    Manual := statManual;
+    Auto := statAuto;
+    
+    ReadyA := statEnableAutoA OR statEnableManualA;
+    ReadyB := statEnableAutoB OR statEnableManualB;
+    
+    Error := statError;
+    
+END_REGION
+
+REGION 
+    // Statement section REGION
+    IF LeavePosA_Timer.Q AND NOT statNoCheckLeaveA THEN
+        Alarm.LeaveA_Error := TRUE;
+    END_IF;
+    IF LeavePosB_Timer.Q AND NOT statNoCheckLeaveB THEN
+        Alarm.LeaveB_Error := TRUE;
+    END_IF;
+    IF MovePosA_Timer.Q AND NOT statNoCheckMoveA THEN
+        Alarm.MoveA_Error := TRUE;
+    END_IF;
+    IF MovePosB_Timer.Q AND NOT statNoCheckMoveB THEN
+        Alarm.MoveB_Error := TRUE;
+    END_IF;
+    IF FeedBack_Timer.Q THEN
+        Alarm.Feedback_Error := TRUE;
+    END_IF;
+    IF Command_Timer.Q THEN
+        Alarm.Command_Error := TRUE;
+    END_IF;
+    
+    IF Ack THEN
+        Alarm.LeaveA_Error := FALSE;
+        Alarm.LeaveB_Error := FALSE;
+        Alarm.MoveA_Error := FALSE;
+        Alarm.MoveB_Error := FALSE;
+        Alarm.Feedback_Error := FALSE;
+        Alarm.Command_Error := FALSE;
+    END_IF;
+    
+    statError := Alarm.LeaveA_Error OR Alarm.LeaveB_Error OR Alarm.MoveA_Error OR Alarm.MoveB_Error OR Alarm.Feedback_Error OR Alarm.Command_Error;
+END_REGION
+
+REGION 
+    // Statement section REGION
+    // Budu dva prekryvajuce sa  temolaty podla typu bude 2 cestny alebo trojcestny 
+    HMI.Status.%X0 := SupplyOk;
+    HMI.Status.%X1 := MediumOk;
+    HMI.Status.%X2 := Interlock;
+    HMI.Status.%X3 := EstopOk;
+    HMI.Status.%X4 := statEnableAutoA;
+    HMI.Status.%X5 := statEnableAutoB;
+    HMI.Status.%X6 := FeedbackA;
+    HMI.Status.%X7 := FeedbackB;
+    HMI.Status.%X8 := CoilA;
+    HMI.Status.%X9 := CoilB;
+    HMI.Status.%X10 := FALSE;
+    HMI.Status.%X11 := statManual;
+    HMI.Status.%X12 := Type;
+    HMI.Status.%X13 := Error;
+    
+END_REGION
+END_FUNCTION_BLOCK

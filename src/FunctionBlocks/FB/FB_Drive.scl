@@ -1,0 +1,65 @@
+﻿FUNCTION_BLOCK "FB_Drive"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Enable : Bool;
+      Start : Bool;
+      Reset : Bool;
+      Setpoint : Real;
+   END_VAR
+
+   VAR_OUTPUT
+      Run : Bool;
+      Fault : Bool;
+      ActualSpeed : Real;
+      ActualTorque : Real;
+   END_VAR
+
+   VAR_IN_OUT
+      DRIVE_IN : "Drive_Input";
+      DRIVE_OUT : "Drive_Output";
+   END_VAR
+
+   VAR_TEMP
+      Temp_Scaled_Out : Real;
+   END_VAR
+
+BEGIN
+// 1. LOGIKA OVLÁDANIA (PLC -> DRIVE_IN)
+// Motor sa spustí len ak je Start=TRUE, Enable=TRUE a menič je Ready + nemá Fault.
+IF Start AND Enable AND DRIVE_OUT.Ready AND NOT DRIVE_OUT.Fault THEN
+    DRIVE_IN.Start := TRUE;
+ELSE
+    DRIVE_IN.Start := FALSE;
+END_IF;
+
+// Priradenie ostatných príkazov
+DRIVE_IN.Reset := Reset;
+DRIVE_IN.Direction := FALSE; // Smer vpred
+
+// 2. ŠKÁLOVANIE RÝCHLOSTI (Real % -> Int 0-27648)
+IF DRIVE_IN.Start THEN
+    Temp_Scaled_Out := (Setpoint / 100.0) * 27648.0;
+ELSE
+    Temp_Scaled_Out := 0.0;
+END_IF;
+
+// Limitácia (Saturácia)
+IF Temp_Scaled_Out > 27648.0 THEN
+    Temp_Scaled_Out := 27648.0;
+END_IF;
+IF Temp_Scaled_Out < 0.0 THEN
+    Temp_Scaled_Out := 0.0;
+END_IF;
+
+DRIVE_IN.Setpoint := REAL_TO_INT(Temp_Scaled_Out);
+
+// 3. SPÄTNÁ VÄZBA (DRIVE_OUT -> PLC Výstupy)
+Run := DRIVE_OUT.Running;
+Fault := DRIVE_OUT.Fault;
+
+// Prepočet rýchlosti na percentá (Int -> Real)
+ActualSpeed := (INT_TO_REAL(DRIVE_OUT.Speed) / 27648.0) * 100.0;
+
+// Prepočet momentu na percentá (Int -> Real)
+ActualTorque := (INT_TO_REAL(DRIVE_OUT.Torque) / 27648.0) * 100.0;
+END_FUNCTION_BLOCK

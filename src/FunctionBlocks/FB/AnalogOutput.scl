@@ -1,0 +1,152 @@
+﻿FUNCTION_BLOCK "AnalogOutput"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Enable : Bool;
+      SupplyOk : Bool;
+      Input : Real;
+      Ack : Bool;
+      Init : Bool;
+   END_VAR
+
+   VAR_OUTPUT
+      Mode : Bool;  // Actual active mode
+      Output : Real;  // Scaled output 
+      Sensor : Int;  // Actual sensor value
+      Error : Bool;
+      Alarms : "AnalogOutput_Error";
+   END_VAR
+
+   VAR_IN_OUT
+      HMI : "AnalogOutput_HMI";
+   END_VAR
+
+   VAR
+      xInput : Real;
+      xHighLimit : Real;
+      xLowLimit : Real;
+      xPhysicalMax : Real;
+      xPhysicalMin : Real;
+      xDigitalMax : Int;
+      xDigitalMin : Int;
+      xScaledValue : Real;
+      xOutOfRange : Bool;
+   END_VAR
+
+   VAR_TEMP
+      TempScaleValue : Real;
+   END_VAR
+
+BEGIN
+
+REGION 
+    /////////////////////////////////////////////////////////////////////////     //
+    // Status word :                                                              //
+    // HMI.Status.%X0 - SupplyOk;                                                 //
+    // HMI.Status.%X1 - Out Of Range;                                             //
+    // HMI.Status.%X2 - No Enable;                                                //
+    // HMI.Status.%X3 - Enable Hight Fault;                                       //
+    // HMI.Status.%X4 - Enable High Warning;                                      //
+    // HMI.Status.%X5 - Enable Low Warning;                                       //
+    // HMI.Status.%X6 - Enable Low Fault;                                         //
+    // HMI.Status.%X7 - HMI control enabled;                                      //
+    // HMI.Status.%X8 - Reserve;                                                  //
+    // HMI.Status.%X9 - Reserve;                                                  //
+    // HMI.Status.%X10 - Reserve;                                                 //
+    // HMI.Status.%X11 - Reserve;                                                 //
+    // HMI.Status.%X12 - Reserve;                                                 //
+    // HMI.Status.%X13 - #Error;                                                  //
+    //                                                                            //
+    //  Control word :                                                            //
+    //  HMI.COntrol.%X0 - Enable HMI;                                             //
+    //  HMI.COntrol.%X1 - Save parameters;                                        //
+    //  HMI.COntrol.%X2 - Reserve;                                                //
+    //  HMI.COntrol.%X3 - Reserve;                                                //
+    //  HMI.COntrol.%X4 - Reserve;                                                //
+    //  HMI.COntrol.%X5 - Reserve;                                                //
+    //  HMI.COntrol.%X6 - Reserve                                                 //
+    //  HMI.COntrol.%X7 - Reserve                                                 //
+    //  HMI.COntrol.%X8 - Init                                                    //
+    //  HMI.COntrol.%X9 - Mode : 0 - auto, 1 - manual                             //
+    //  HMI.COntrol.%X10 - Force value                                            //
+    //                                                                            //
+    ////////////////////////////////////////////////////////////////////////////////
+    
+END_REGION
+
+REGION 
+    xInput := Input;
+END_REGION
+
+REGION 
+    IF HMI.Control.%X1 AND HMI.Control.%X9 THEN
+        xDigitalMax := HMI.DigitalMax;
+        xDigitalMin := HMI.DigitalMin;
+        xPhysicalMax := HMI.PhysicalMax;
+        xPhysicalMin := HMI.PhysicalMin;
+    END_IF;
+    
+END_REGION
+
+REGION 
+    IF (Input > xPhysicalMax OR Input < xPhysicalMin) AND SupplyOk THEN
+        xOutOfRange := TRUE;
+        Alarms.OutOfRange := TRUE;
+        xInput := 0;
+    ELSE
+        xOutOfRange := FALSE;
+    END_IF;
+    IF NOT xOutOfRange AND SupplyOk THEN
+        IF Input > xHighLimit THEN
+            Alarms.HighLimitOverFlow := TRUE;
+            xInput := xHighLimit;
+        ELSIF Input < xLowLimit THEN
+            Alarms.LowLimitOverFlow := TRUE;
+            xInput := xLowLimit;
+        END_IF;
+    END_IF;
+    IF Ack THEN
+        Alarms.HighLimitOverFlow := FALSE;
+        Alarms.LowLimitOverFlow := FALSE;
+        Alarms.OutOfRange := FALSE;
+    END_IF;
+    
+END_REGION
+
+REGION 
+    IF Enable THEN
+        TempScaleValue := NORM_X(MIN  := xPhysicalMin, VALUE  := Input, MAX  := xPhysicalMax);
+        xScaledValue := SCALE_X(MIN  := xDigitalMin, VALUE  := TempScaleValue, MAX  := xDigitalMax);
+    ELSE
+        xScaledValue := 0;
+    END_IF; 
+END_REGION
+
+
+REGION 
+    HMI.Status.%X0 := SupplyOk;
+    HMI.Status.%X1 := xOutOfRange;
+    HMI.Status.%X2 := NOT Enable;
+    HMI.Status.%X3 := FALSE;
+    HMI.Status.%X4 := FALSE;
+    HMI.Status.%X5 := FALSE;
+    HMI.Status.%X6 := FALSE;
+    IF HMI.Control.%X0 AND HMI.Control.%X9 THEN
+        HMI.Status.%X7 := TRUE;
+    ELSE
+        HMI.Status.%X7 := FALSE;
+    END_IF;
+    HMI.Status.%X8 := FALSE;
+    HMI.Status.%X9 := FALSE;
+    HMI.Status.%X10 := FALSE;
+    HMI.Status.%X11 := FALSE; 
+    HMI.Status.%X12 := FALSE;
+    HMI.Status.%X13 := FALSE;
+    HMI.Status.%X14 := FALSE;
+    HMI.Status.%X15 := FALSE;
+    
+END_REGION
+
+REGION 
+    Output := xScaledValue;
+END_REGION
+END_FUNCTION_BLOCK

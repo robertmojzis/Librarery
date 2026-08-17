@@ -1,0 +1,30 @@
+﻿FUNCTION_BLOCK "FB_ValveControl"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR_INPUT
+      Auto : Bool;
+      Manual : Bool;
+      InputA : Bool;
+      InputB : Bool;
+      FeedBackA : Bool;
+      FeedBackB : Bool;
+   END_VAR
+
+   VAR_OUTPUT
+      OutputA : Bool;
+      OutputB : Bool;
+      HmiA : Bool;
+      HmiB : Bool;
+   END_VAR
+
+BEGIN
+IF InputA AND NOT InputB THEN
+    OutputA := TRUE;
+    OutputB := FALSE;
+ELSIF InputB AND NOT InputA THEN
+    OutputA := FALSE;
+    OutputB := TRUE;
+END_IF;
+
+HmiA := FeedBackA;
+HmiB := FeedBackB;
+END_FUNCTION_BLOCK

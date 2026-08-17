@@ -1,0 +1,9 @@
+FUNCTION_BLOCK "EM_TransferFeed"
+{ S7_Optimized_Access := 'TRUE' }
+   VAR
+      Static : Bool;
+   END_VAR
+
+BEGIN
+// No networks contain logic in the TIA project
+END_FUNCTION_BLOCK
