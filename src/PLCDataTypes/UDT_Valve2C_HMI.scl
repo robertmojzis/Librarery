@@ -1,0 +1,28 @@
+TYPE "UDT_Valve2C_HMI"
+VERSION : 0.2
+   STRUCT
+      Status : STRUCT
+         ModeAuto : Bool;                  // Current effective mode = Automatic
+         ModeManual : Bool;                // Current effective mode = Manual
+         ModeMaintenance : Bool;           // Current effective mode = Maintenance
+         Open : Bool;                      // Valve confirmed fully open
+         Closed : Bool;                    // Valve confirmed fully closed
+         Moving : Bool;                    // Valve in transit between end positions
+         CoilOpen : Bool;                  // Open coil (Y1) energized
+         CoilClose : Bool;                 // Close coil (Y2) energized
+         InterlockedOpen : Bool;           // TRUE = open interlock is currently blocking opening (Auto/Manual only)
+         InterlockedClose : Bool;          // TRUE = close interlock is currently blocking closing (Auto/Manual only)
+         Fault : Bool;                     // Collective fault
+         FaultTimeoutOpen : Bool;          // Open travel-time supervision tripped
+         FaultTimeoutClose : Bool;         // Close travel-time supervision tripped
+         FaultFeedbackConflict : Bool;     // Open and close feedback active at the same time
+      END_STRUCT;
+      Control : STRUCT
+         ModeManual : Bool;                // Selector: request Manual mode (level; wins over Auto, loses to Maintenance)
+         ModeMaintenance : Bool;           // Selector: request Maintenance mode (level; highest priority)
+         OpenCmd : Bool;                   // Open pushbutton, valid in Manual and Maintenance
+         CloseCmd : Bool;                  // Close pushbutton, valid in Manual and Maintenance
+         ResetFault : Bool;                // Fault reset pushbutton (rising edge)
+      END_STRUCT;
+   END_STRUCT;
+END_TYPE

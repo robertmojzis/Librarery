@@ -1,0 +1,145 @@
+FUNCTION_BLOCK "FB_Valve"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.2
+   VAR_INPUT
+      AutoOpenCmd : Bool;                  // Automatic mode: open demand from sequencer/process
+      AutoCloseCmd : Bool;                 // Automatic mode: close demand from sequencer/process
+      OpenFeedback : Bool;                 // Open end-position limit switch
+      CloseFeedback : Bool;                // Closed end-position limit switch
+      InterlockOpen : Bool;                // Permissive to open; TRUE = opening allowed. Valid in Auto and Manual, bypassed in Maintenance
+      InterlockClose : Bool;               // Permissive to close; TRUE = closing allowed. Valid in Auto and Manual, bypassed in Maintenance
+      TravelTime : Time := T#10S;          // Max time allowed to reach the commanded end position before a timeout fault is raised
+   END_VAR
+
+   VAR_OUTPUT
+      CoilOpen : Bool;                     // Physical output to the open coil (Y1)
+      CoilClose : Bool;                    // Physical output to the close coil (Y2)
+      Open : Bool;                         // Valve confirmed fully open
+      Closed : Bool;                       // Valve confirmed fully closed
+      Moving : Bool;                       // Valve in transit between end positions
+      Fault : Bool;                        // Collective fault; see HMI.Status for detail
+   END_VAR
+
+   VAR_IN_OUT
+      HMI : "UDT_Valve2C_HMI";             // HMI interface: operator status display + control (mode select / open / close / reset)
+   END_VAR
+
+   VAR
+      FirstScan : Bool := TRUE;            // Forces safe defaults on the first scan after (re)start
+      ModeAuto : Bool;                     // Effective mode = Automatic
+      ModeManual : Bool;                   // Effective mode = Manual
+      ModeMaintenance : Bool;              // Effective mode = Maintenance
+      TargetOpen : Bool;                   // Latched position demand; TRUE = drive open, FALSE = drive closed
+      ResetFaultEdge : R_TRIG;             // Edge detector for HMI.Control.ResetFault
+      OpenTimer : TON;                     // Open travel-time supervision
+      CloseTimer : TON;                    // Close travel-time supervision
+      FaultTimeoutOpen : Bool;             // Latched: open travel time exceeded
+      FaultTimeoutClose : Bool;            // Latched: close travel time exceeded
+      FaultFeedbackConflict : Bool;        // Latched: open and close feedback active at the same time
+   END_VAR
+
+BEGIN
+
+   REGION "1. Initialization"
+      IF #FirstScan THEN
+         #TargetOpen := #OpenFeedback;     // Adopt the current physical position as the initial target so the valve doesn't move on (re)start
+         #FirstScan := FALSE;
+      END_IF;
+
+      // Mode arbitration from the HMI selector: Maintenance overrides Manual, which overrides Automatic (default)
+      #ModeMaintenance := #HMI.Control.ModeMaintenance;
+      #ModeManual := NOT #ModeMaintenance AND #HMI.Control.ModeManual;
+      #ModeAuto := NOT #ModeMaintenance AND NOT #ModeManual;
+
+      #ResetFaultEdge(CLK := #HMI.Control.ResetFault);
+   END_REGION
+
+   REGION "2. Manual control"
+      // Commands come from the HMI; the direction-matching interlock remains in force
+      IF #ModeManual THEN
+         IF #HMI.Control.OpenCmd AND NOT #HMI.Control.CloseCmd AND #InterlockOpen THEN
+            #TargetOpen := TRUE;
+         ELSIF #HMI.Control.CloseCmd AND NOT #HMI.Control.OpenCmd AND #InterlockClose THEN
+            #TargetOpen := FALSE;
+         END_IF;
+      END_IF;
+   END_REGION
+
+   REGION "3. Automatic control"
+      // Commands come from the block inputs; the direction-matching interlock remains in force
+      IF #ModeAuto THEN
+         IF #AutoOpenCmd AND NOT #AutoCloseCmd AND #InterlockOpen THEN
+            #TargetOpen := TRUE;
+         ELSIF #AutoCloseCmd AND NOT #AutoOpenCmd AND #InterlockClose THEN
+            #TargetOpen := FALSE;
+         END_IF;
+      END_IF;
+   END_REGION
+
+   REGION "4. Maintenance control"
+      // Commands come from the HMI; interlocks are intentionally bypassed
+      IF #ModeMaintenance THEN
+         IF #HMI.Control.OpenCmd AND NOT #HMI.Control.CloseCmd THEN
+            #TargetOpen := TRUE;
+         ELSIF #HMI.Control.CloseCmd AND NOT #HMI.Control.OpenCmd THEN
+            #TargetOpen := FALSE;
+         END_IF;
+      END_IF;
+   END_REGION
+
+   // Resolve the physical coil outputs from the position demand. A coil drops once its end
+   // position is confirmed (bistable double-solenoid valve), both coils are inhibited while
+   // a fault is active, and Auto/Manual travel is continuously held by its matching interlock
+   // (not just sampled when the command was issued) - only Maintenance bypasses it.
+   #CoilOpen := #TargetOpen AND NOT #OpenFeedback AND NOT #Fault AND (#ModeMaintenance OR #InterlockOpen);
+   #CoilClose := NOT #TargetOpen AND NOT #CloseFeedback AND NOT #Fault AND (#ModeMaintenance OR #InterlockClose);
+
+   REGION "5. Error handling"
+      #OpenTimer(IN := #CoilOpen, PT := #TravelTime);
+      #CloseTimer(IN := #CoilClose, PT := #TravelTime);
+
+      IF #OpenTimer.Q THEN
+         #FaultTimeoutOpen := TRUE;
+      END_IF;
+
+      IF #CloseTimer.Q THEN
+         #FaultTimeoutClose := TRUE;
+      END_IF;
+
+      IF #OpenFeedback AND #CloseFeedback THEN
+         #FaultFeedbackConflict := TRUE;
+      END_IF;
+
+      IF #ResetFaultEdge.Q THEN
+         #FaultTimeoutOpen := FALSE;
+         #FaultTimeoutClose := FALSE;
+         IF NOT (#OpenFeedback AND #CloseFeedback) THEN
+            #FaultFeedbackConflict := FALSE;
+         END_IF;
+      END_IF;
+
+      #Fault := #FaultTimeoutOpen OR #FaultTimeoutClose OR #FaultFeedbackConflict;
+   END_REGION
+
+   REGION "6. HMI"
+      #Open := #OpenFeedback AND NOT #CloseFeedback;
+      #Closed := #CloseFeedback AND NOT #OpenFeedback;
+      #Moving := NOT #Open AND NOT #Closed AND NOT #Fault;
+
+      #HMI.Status.ModeAuto := #ModeAuto;
+      #HMI.Status.ModeManual := #ModeManual;
+      #HMI.Status.ModeMaintenance := #ModeMaintenance;
+      #HMI.Status.Open := #Open;
+      #HMI.Status.Closed := #Closed;
+      #HMI.Status.Moving := #Moving;
+      #HMI.Status.CoilOpen := #CoilOpen;
+      #HMI.Status.CoilClose := #CoilClose;
+      #HMI.Status.InterlockedOpen := NOT #InterlockOpen;
+      #HMI.Status.InterlockedClose := NOT #InterlockClose;
+      #HMI.Status.Fault := #Fault;
+      #HMI.Status.FaultTimeoutOpen := #FaultTimeoutOpen;
+      #HMI.Status.FaultTimeoutClose := #FaultTimeoutClose;
+      #HMI.Status.FaultFeedbackConflict := #FaultFeedbackConflict;
+   END_REGION
+
+END_FUNCTION_BLOCK

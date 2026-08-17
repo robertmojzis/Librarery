@@ -1,0 +1,196 @@
+FUNCTION_BLOCK "FB_Valve_Test"
+{ S7_Optimized_Access := 'TRUE' }
+VERSION : 0.2
+// Self-contained test harness for "FB_Valve". Drop this block into a spare OB (or call it
+// once per scan from a temporary line in OB1) and download to PLCSIM. It drives its own
+// instance of the unit under test through a fixed sequence of scenarios, forcing inputs
+// and HMI feedback signals as if a technician/simulator were operating the valve, and
+// records a pass/fail per step. Watch StepPassed[], Step and AllPassed in a watch table.
+//
+// Covers: default mode, automatic open/close with feedback, independent InterlockOpen /
+// InterlockClose gating of new auto commands, manual mode switch and operation,
+// CONTINUOUS interlock enforcement during manual travel (stop/resume), maintenance mode
+// interlock bypass, travel-timeout fault, fault-reset semantics (a reset does not clear
+// a fault whose condition still exists), and the open/close feedback-conflict fault.
+
+   VAR
+      UUT : "FB_Valve";                    // unit under test
+      UUT_HMI : "UDT_Valve2C_HMI";          // HMI interface passed to the unit under test
+
+      Step : Int := 0;                     // current scenario index
+      PrevStep : Int := -1;                // used to detect a step change and reset StepTimer
+      StepTimer : TON;                     // dwell timer for the current step
+      StepDwell : Time := T#300MS;         // dwell for the current step; set per-step below
+      Running : Bool := TRUE;              // FALSE once the sequence has finished
+
+      StepPassed : Array[0..18] of Bool;   // pass/fail result of each evaluated step
+      i : Int;                             // loop index for the final summary
+      AllPassed : Bool;                    // TRUE once every step in StepPassed is TRUE
+      TestComplete : Bool;                 // TRUE once the sequence has run to completion
+   END_VAR
+
+BEGIN
+
+   // ---------------------------------------------------------------------------------
+   // Drive the unit-under-test inputs and HMI control bits for the current step, and
+   // pick how long to dwell on it before the assertion is evaluated. Every branch sets
+   // every relevant signal explicitly - the HMI struct persists between calls, so a bit
+   // left unset would otherwise bleed through from a previous step.
+   // ---------------------------------------------------------------------------------
+   CASE #Step OF
+
+      0:  // Power-up defaults: Automatic mode, no motion, no fault
+          #UUT.AutoOpenCmd := FALSE;  #UUT.AutoCloseCmd := FALSE;
+          #UUT.OpenFeedback := FALSE; #UUT.CloseFeedback := FALSE;
+          #UUT.InterlockOpen := TRUE; #UUT.InterlockClose := TRUE;
+          #UUT.TravelTime := T#500MS;
+          #UUT_HMI.Control.ModeManual := FALSE; #UUT_HMI.Control.ModeMaintenance := FALSE;
+          #UUT_HMI.Control.OpenCmd := FALSE;    #UUT_HMI.Control.CloseCmd := FALSE;
+          #UUT_HMI.Control.ResetFault := FALSE;
+          #StepDwell := T#300MS;
+
+      1:  // Automatic open commanded, no feedback yet -> open coil must energize
+          #UUT.AutoOpenCmd := TRUE; #UUT.AutoCloseCmd := FALSE;
+          #StepDwell := T#300MS;
+
+      2:  // Open feedback arrives -> coil drops, Open status confirmed
+          #UUT.OpenFeedback := TRUE;
+          #StepDwell := T#300MS;
+
+      3:  // InterlockClose removed: a NEW automatic close request must be rejected, valve stays open
+          #UUT.AutoOpenCmd := FALSE; #UUT.AutoCloseCmd := TRUE;
+          #UUT.InterlockClose := FALSE;
+          #StepDwell := T#300MS;
+
+      4:  // InterlockClose restored, close commanded for real -> close coil must energize
+          #UUT.InterlockClose := TRUE;
+          #StepDwell := T#300MS;
+
+      5:  // Close feedback arrives -> coil drops, Closed status confirmed
+          #UUT.OpenFeedback := FALSE; #UUT.CloseFeedback := TRUE;
+          #StepDwell := T#300MS;
+
+      6:  // InterlockOpen removed: a NEW automatic open request must be rejected, valve stays closed
+          #UUT.AutoOpenCmd := TRUE; #UUT.AutoCloseCmd := FALSE;
+          #UUT.InterlockOpen := FALSE;
+          #StepDwell := T#300MS;
+
+      7:  // Restore both interlocks, switch to Manual mode, no command pressed yet
+          #UUT.InterlockOpen := TRUE; #UUT.AutoOpenCmd := FALSE;
+          #UUT_HMI.Control.ModeManual := TRUE;
+          #StepDwell := T#300MS;
+
+      8:  // Manual open, interlock present -> must move
+          #UUT_HMI.Control.OpenCmd := TRUE;
+          #UUT.OpenFeedback := FALSE; #UUT.CloseFeedback := FALSE;
+          #StepDwell := T#300MS;
+
+      9:  // InterlockOpen lost mid-travel in Manual -> coil must stop immediately
+          #UUT.InterlockOpen := FALSE;
+          #StepDwell := T#300MS;
+
+      10: // InterlockOpen restored -> travel resumes toward the still-latched target
+          #UUT.InterlockOpen := TRUE;
+          #StepDwell := T#300MS;
+
+      11: // Open feedback reached in Manual
+          #UUT.OpenFeedback := TRUE;
+          #StepDwell := T#300MS;
+
+      12: // Switch to Maintenance, command close, InterlockClose forced OFF: must move anyway
+          #UUT_HMI.Control.ModeManual := FALSE; #UUT_HMI.Control.ModeMaintenance := TRUE;
+          #UUT_HMI.Control.OpenCmd := FALSE;    #UUT_HMI.Control.CloseCmd := TRUE;
+          #UUT.InterlockClose := FALSE;
+          #UUT.OpenFeedback := FALSE; #UUT.CloseFeedback := FALSE;
+          #StepDwell := T#300MS;             // short: confirm bypass, not the timeout yet
+
+      13: // Hold the same state past TravelTime -> travel-timeout fault must trip
+          #StepDwell := T#800MS;             // > TravelTime (500 ms), continues the same IN
+
+      14: // Reset attempted while CloseFeedback is still missing -> must re-fault
+          #UUT_HMI.Control.ResetFault := TRUE;
+          #StepDwell := T#800MS;             // > TravelTime again, to observe the re-trip
+
+      15: // Release the reset pulse and resolve the condition; not yet reset -> still faulted
+          #UUT_HMI.Control.ResetFault := FALSE;
+          #UUT.CloseFeedback := TRUE;
+          #StepDwell := T#300MS;
+
+      16: // Now reset with the condition resolved -> fault must clear
+          #UUT_HMI.Control.ResetFault := TRUE;
+          #StepDwell := T#300MS;
+
+      17: // Force both feedbacks TRUE -> feedback-conflict fault must set
+          #UUT_HMI.Control.ResetFault := FALSE;
+          #UUT.OpenFeedback := TRUE; #UUT.CloseFeedback := TRUE;
+          #StepDwell := T#300MS;
+
+      18: // Resolve the conflict and reset -> fault must clear, Closed confirmed
+          #UUT.OpenFeedback := FALSE; #UUT.CloseFeedback := TRUE;
+          #UUT_HMI.Control.ResetFault := TRUE;
+          #StepDwell := T#300MS;
+
+   END_CASE;
+
+   // ---------------------------------------------------------------------------------
+   // Run the unit under test. Inputs were already written directly into the instance
+   // above (#UUT.xxx := ...); they persist in the instance DB, so the call only needs
+   // to pass the INOUT parameter.
+   // ---------------------------------------------------------------------------------
+   IF #Running THEN
+      #UUT(HMI := #UUT_HMI);
+   END_IF;
+
+   IF #Step <> #PrevStep THEN
+      #PrevStep := #Step;
+      #StepTimer(IN := FALSE, PT := #StepDwell);   // force ET back to 0 on every step change
+   ELSE
+      #StepTimer(IN := #Running, PT := #StepDwell);
+   END_IF;
+
+   // ---------------------------------------------------------------------------------
+   // Evaluate the assertion for the step once its dwell has elapsed, then advance
+   // ---------------------------------------------------------------------------------
+   IF #StepTimer.Q AND #Running THEN
+
+      CASE #Step OF
+         0:  #StepPassed[0]  := #UUT_HMI.Status.ModeAuto AND NOT #UUT.CoilOpen AND NOT #UUT.CoilClose AND NOT #UUT.Fault;
+         1:  #StepPassed[1]  := #UUT.CoilOpen AND NOT #UUT.CoilClose AND #UUT.Moving;
+         2:  #StepPassed[2]  := NOT #UUT.CoilOpen AND #UUT.Open AND #UUT_HMI.Status.Open;
+         3:  #StepPassed[3]  := NOT #UUT.CoilClose AND #UUT.Open;
+         4:  #StepPassed[4]  := #UUT.CoilClose AND NOT #UUT.CoilOpen;
+         5:  #StepPassed[5]  := NOT #UUT.CoilClose AND #UUT.Closed;
+         6:  #StepPassed[6]  := NOT #UUT.CoilOpen AND #UUT.Closed;
+         7:  #StepPassed[7]  := #UUT_HMI.Status.ModeManual AND NOT #UUT_HMI.Status.ModeAuto
+                                 AND NOT #UUT.CoilOpen AND NOT #UUT.CoilClose;
+         8:  #StepPassed[8]  := #UUT.CoilOpen;
+         9:  #StepPassed[9]  := NOT #UUT.CoilOpen;
+         10: #StepPassed[10] := #UUT.CoilOpen;
+         11: #StepPassed[11] := NOT #UUT.CoilOpen AND #UUT.Open;
+         12: #StepPassed[12] := #UUT_HMI.Status.ModeMaintenance AND #UUT.CoilClose AND NOT #UUT.Fault;
+         13: #StepPassed[13] := #UUT.Fault AND #UUT_HMI.Status.FaultTimeoutClose AND NOT #UUT.CoilClose;
+         14: #StepPassed[14] := #UUT.Fault AND #UUT_HMI.Status.FaultTimeoutClose;
+         15: #StepPassed[15] := #UUT.Fault AND #UUT.Closed;
+         16: #StepPassed[16] := NOT #UUT.Fault;
+         17: #StepPassed[17] := #UUT.Fault AND #UUT_HMI.Status.FaultFeedbackConflict;
+         18: #StepPassed[18] := NOT #UUT.Fault AND #UUT.Closed;
+      END_CASE;
+
+      #Step := #Step + 1;
+   END_IF;
+
+   // ---------------------------------------------------------------------------------
+   // Wrap up once every step has run
+   // ---------------------------------------------------------------------------------
+   IF #Step > 18 AND NOT #TestComplete THEN
+      #Running := FALSE;
+      #TestComplete := TRUE;
+      #AllPassed := TRUE;
+      FOR #i := 0 TO 18 DO
+         IF NOT #StepPassed[#i] THEN
+            #AllPassed := FALSE;
+         END_IF;
+      END_FOR;
+   END_IF;
+
+END_FUNCTION_BLOCK
