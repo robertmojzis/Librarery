@@ -1,4 +1,4 @@
-# MilkPasterization_Lib
+Librarery
 
 Function block library for the milk pasteurization PLC program, authored in SCL and
 loaded into the TIA Portal project `MCP_Server.ap20` (TIA Portal V20).
